@@ -53,8 +53,29 @@ export class Box extends EventEmitter {
     private outputStatus: Status = Status.Off
 
     public static create(outStatusPins: StatusPinTuple[] = DEFAULT_OUT_STATUS_PINS,
-                         inStatusPins: StatusPinTuple[] = DEFAULT_IN_STATUS_PINS) {
+                         inStatusPins: StatusPinTuple[] = DEFAULT_IN_STATUS_PINS): Box {
         return new Box(outStatusPins, inStatusPins)
+    }
+
+    public getInputStatus() { return this.inputStatus }
+    public getOutputStatus() { return this.outputStatus }
+
+    public setOutputStatus(newStatus: Status): void {
+        if (this.outputStatus === newStatus) return
+
+        this.outputByStatus.get(this.outputStatus)?.writeSync(0)
+        if (newStatus !== Status.Off) {
+            this.outputByStatus.get(newStatus)?.writeSync(1)
+        }
+
+        this.outputStatus = newStatus
+    }
+
+    // this may be async in the future so just return a promise (see service.stop)
+    public stop(): Promise<void> {
+        this.inputByStatus.forEach(input => input.unexport())
+        this.outputByStatus.forEach(output => output.unexport())
+        return Promise.resolve()
     }
 
     private constructor(outStatusPins?: StatusPinTuple[], inStatusPins?: StatusPinTuple[]) {
@@ -92,21 +113,7 @@ export class Box extends EventEmitter {
         }
     }
 
-    public getInputStatus() { return this.inputStatus }
-    public getOutputStatus() { return this.outputStatus }
-
-    public setOutputStatus(newStatus: Status) {
-        if (this.outputStatus === newStatus) return
-
-        this.outputByStatus.get(this.outputStatus)?.writeSync(0)
-        if (newStatus !== Status.Off) {
-            this.outputByStatus.get(newStatus)?.writeSync(1)
-        }
-
-        this.outputStatus = newStatus
-    }
-
-    private setInputStatus(newStatus: Status) {
+    private setInputStatus(newStatus: Status): void {
         this.inputStatus = newStatus
         this.emit('inputStatus.update', newStatus)
     }
