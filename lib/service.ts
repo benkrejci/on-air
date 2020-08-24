@@ -145,10 +145,10 @@ export class Service extends EventEmitter {
             if (status === Status.High) return
         }
 
+        if (this.outputStatus === newStatus) return
+
         console.log(`  - aggregate output status changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
-
         this.outputStatus = newStatus
-
         this.emit('outputStatus.update', this.outputStatus)
     }
 }
