@@ -38,21 +38,21 @@ process.on('unhandledRejection', async () => {
 })
 
 async function cleanUp(success: boolean) {
-    process.stdout.write('trying to clean up...')
-    process.stdout.write(' - "box" hardware controller, stopping...')
+    process.stdout.write('trying to clean up...\n')
+    process.stdout.write(' - "box" (hardware controller): stopping...')
     try {
         await box.stop()
-        process.stdout.write(' dead!\n')
+        process.stdout.write(' dead\n')
     } catch (e) {
         process.stdout.write(' error! oh well\n')
     }
-    process.stdout.write(' - service, stopping...')
+    process.stdout.write(' - service (http & mdns): stopping...')
     try {
         await service.stop()
-        process.stdout.write(' dead!\n')
+        process.stdout.write(' dead\n')
     } catch (e) {
         process.stdout.write(' error! oh well\n')
     }
-    process.stdout.write('goodbye!')
+    process.stdout.write('goodbye\n')
     process.exit(success ? 0 : 1)
 }
