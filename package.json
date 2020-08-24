@@ -2,7 +2,6 @@
   "dependencies": {
     "@types/bonjour": "^3.5.6",
     "axios": "^0.20.0",
-    "body-parser": "^1.19.0",
     "bonjour": "^3.5.0",
     "express": "^4.17.1",
     "onoff": "^6.0.0",

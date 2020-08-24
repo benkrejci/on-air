@@ -4,7 +4,6 @@ import { EventEmitter } from 'events'
 import express from 'express'
 import axios from 'axios'
 import { Status } from './types'
-import bodyParser from 'body-parser'
 
 const SERVICE_TYPE = 'http'
 const DEFAULT_SERVICE_PORT = 8991
@@ -28,7 +27,7 @@ export class Service extends EventEmitter {
     private readonly service: Bonjour.Service
     private readonly browser: Bonjour.Browser
     private readonly statusByFqdn: { [key: string]: Status } = {}
-    private readonly express = express().use(bodyParser.json(), bodyParser.urlencoded())
+    private readonly express = express().use(express.json(), express.urlencoded({ extended: true }))
 
     // what we should be showing locally (highest status of all services)
     private outputStatus: Status = Status.Off
