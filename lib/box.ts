@@ -69,6 +69,8 @@ export class Box extends EventEmitter {
         }
 
         this.outputStatus = newStatus
+
+        console.log(`  - box output LED changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
     }
 
     // this may be async in the future so just return a promise (see service.stop)
@@ -114,6 +116,7 @@ export class Box extends EventEmitter {
     }
 
     private setInputStatus(newStatus: Status): void {
+        console.log(`  - box input switch changed from ${Status[this.inputStatus]} to ${Status[newStatus]}`)
         this.inputStatus = newStatus
         this.emit('inputStatus.update', newStatus)
     }
