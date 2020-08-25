@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "@types/bonjour": "^3.5.6",
     "axios": "^0.20.0",
     "bonjour": "^3.5.0",
     "express": "^4.17.1",
@@ -14,11 +13,13 @@
   },
   "name": "on-air",
   "version": "1.0.0",
-  "main": "lib/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "repository": "git@github.com:benkrejci/on-air.git",
   "author": "krejcib <krejcib@audible.com>",
   "license": "MIT",
   "devDependencies": {
+    "@types/bonjour": "^3.5.6",
     "@types/express": "^4.17.7",
     "@types/node": "^14.6.0",
     "ts-node": "^9.0.0"

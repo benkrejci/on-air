@@ -68,9 +68,13 @@ export class Box extends EventEmitter {
             this.outputByStatus.get(newStatus)?.writeSync(1)
         }
 
-        this.outputStatus = newStatus
+        const statusString = Status[newStatus]
+        console.log(`  - box output LED changed from ${Status[this.outputStatus]} to ${statusString}
++--${'-'.repeat(statusString.length)}--+
+|  ${statusString}  |
++--${'-'.repeat(statusString.length)}--+`)
 
-        console.log(`  - box output LED changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
+        this.outputStatus = newStatus
     }
 
     // this may be async in the future so just return a promise (see service.stop)
@@ -85,11 +89,11 @@ export class Box extends EventEmitter {
 
         if (inStatusPins) {
             inStatusPins.forEach(([status, pin]) => {
-                // 'rising' edge means event should trigger when connection is made, not when broken (from value 0 to 1)
+                // 'both' edge means event should trigger when connection is made and when broken
                 const input = new Gpio(
                     pin,
                     'in',
-                    'rising',
+                    'both',
                     {debounceTimeout: INPUT_DEBOUNCE_DELAY}
                 )
                 this.inputByStatus.set(status, input)
@@ -98,10 +102,18 @@ export class Box extends EventEmitter {
                 if (input.readSync() === 1) this.setInputStatus(status)
 
                 // when input value on this pin changes, update input status
-                input.watch((error) => {
+                input.watch((error, value) => {
                     if (error) {
                         console.error(`Error on GPIO watcher on pin ${pin}`, error)
+                    } else if (value === 0) {
+                        if (this.inputStatus === status) {
+                            // if connection broken, status is off now
+                            this.setInputStatus(Status.Off)
+                        } else {
+                            console.warn('Status input turned off that is not currently on. This should never happen! (Maybe using the wrong type of switch? Should use an ON-OFF-ON rocker)')
+                        }
                     } else {
+                        // set to this status
                         this.setInputStatus(status)
                     }
                 })
@@ -115,9 +127,10 @@ export class Box extends EventEmitter {
         }
     }
 
-    private setInputStatus(newStatus: Status): void {
-        console.log(`  - box input switch changed from ${Status[this.inputStatus]} to ${Status[newStatus]}`)
-        this.inputStatus = newStatus
-        this.emit('inputStatus.update', newStatus)
+    private setInputStatus(status: Status): void {
+        if (this.inputStatus === status) return
+        console.log(`  - box input switch changed from ${Status[this.inputStatus]} to ${Status[status]}`)
+        this.inputStatus = status
+        this.emit('inputStatus.update', status)
     }
 }

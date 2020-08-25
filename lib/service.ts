@@ -5,14 +5,14 @@ import express from 'express'
 import axios from 'axios'
 import { Status } from './types'
 import { Server } from 'http'
+import { isIPv4 } from 'net'
 
-const SERVICE_TYPE = 'http'
+const SERVICE_TYPE = 'on-air-box'
 const DEFAULT_SERVICE_PORT = 8991
-const SUB_TYPE = 'on-air-api-v1'
 const API_PATH = 'api/v1'
 const DEFAULT_SERVICE_NAME = `on-air-box-${os.hostname()}`
 
-const bonjour = Bonjour({})
+const bonjour = Bonjour()
 
 process.on('exit', () => {
     bonjour.destroy()
@@ -67,7 +67,7 @@ export class Service extends EventEmitter {
 
         // start API server
         this.express.put(
-            `${API_PATH}/status`,
+            `/${API_PATH}/status`,
             (request, response) => {
                 const { fqdn, status }: { fqdn: string, status: Status } = request.body
                 const oldStatus = this.statusByFqdn[fqdn]
@@ -83,26 +83,26 @@ export class Service extends EventEmitter {
         // look for other on-air services
         this.browser = bonjour.find({
             type: SERVICE_TYPE,
-        })
-        // when new service comes on
-        this.browser.on('up', (service) => {
-            if (service.subtypes?.includes(SUB_TYPE)) {
-                // add it to our list of services
-                this.allServices.push(service)
-                // and give it our current input status
-                this.updateRemoteService(service)
-                console.log(`  - discovered a friend box 😍! ${service.fqdn}`)
-            }
+        }, (service: Bonjour.Service) => {
+            // when new service comes online; this callback is equivalent to browser.on('up', func)
+            // don't count this service
+            if (service.name === name) return
+            // add it to our list of services
+            this.allServices.push(service)
+            // and give it our current input status
+            this.updateRemoteService(service)
+            console.log(`  - discovered a friend box! 😍 [${service.fqdn}]`)
         })
         // when service dies
-        this.browser.on('down', (service) => {
-            // remove it from our list
+        this.browser.on('down', (service: Bonjour.Service) => {
             const serviceIndex = this.allServices.indexOf(service);
-            if (serviceIndex > -1) this.allServices.splice(serviceIndex, 1);
+            if (serviceIndex < 0) return
+            // remove it from our list
+            this.allServices.splice(serviceIndex, 1);
             // remove service status and recalculate output status
             delete this.statusByFqdn[service.fqdn]
             this.computeOutputStatus()
-            console.log(`  - friend box went offline 😔: ${service.fqdn}`)
+            console.log(`  - friend box went offline 😔 [${service.fqdn}]`)
         })
 
         // announce our service
@@ -110,12 +110,26 @@ export class Service extends EventEmitter {
             name,
             port,
             type: SERVICE_TYPE,
-            subtypes: [SUB_TYPE],
         })
         console.log(`- on-air bonjour service announced at ${this.service.fqdn}`)
 
         // initialize our input status to off (this will go around and set our status on all discovered services)
         this.setInputStatus(Status.Off)
+    }
+
+    private async updateRemoteService(service: Bonjour.Service): Promise<void> {
+        const ip = service.addresses.find((a: string) => isIPv4(a))
+        const url = `http://${ip}:${service.port}/${API_PATH}/status`
+        try {
+            await axios.put(url, {
+                fqdn: this.service.fqdn,
+                status: this.statusByFqdn[this.service.fqdn],
+            })
+        } catch (error) {
+            // we'll consider this a recoverable error for now
+            console.warn(`Error updating status on ${url}:`, error.message)
+            console.debug(error)
+        }
     }
 
     private setServiceStatus(fqdn: string, status: Status): void {
@@ -125,24 +139,11 @@ export class Service extends EventEmitter {
         this.computeOutputStatus()
     }
 
-    private async updateRemoteService(service: Bonjour.Service): Promise<void> {
-        const url = `${service.host}:${service.port}/${API_PATH}/status`
-        try {
-            await axios.put(url, {
-                fqdn: this.service.fqdn,
-                status: this.statusByFqdn[this.service.fqdn],
-            })
-        } catch (error) {
-            // we'll consider this a recoverable error for now
-            console.warn(`Error updating status on ${url}:`, error)
-        }
-    }
-
     private computeOutputStatus(): void {
         let newStatus: Status = Status.Off
         for (let status of Object.values(this.statusByFqdn)) {
             if (status >= newStatus) newStatus = status
-            if (status === Status.High) return
+            if (status === Status.High) break
         }
 
         if (this.outputStatus === newStatus) return
