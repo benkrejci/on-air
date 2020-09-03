@@ -65,19 +65,19 @@ export class Service extends EventEmitter {
     private constructor(name: string, port: number) {
         super()
 
-        // start API server
+        // install API server
         this.express.put(
             `/${API_PATH}/status`,
             (request, response) => {
                 const { fqdn, status }: { fqdn: string, status: Status } = request.body
                 const oldStatus = this.statusByFqdn[fqdn]
-                console.log(`  - remote service ${fqdn} status changed from ${oldStatus && Status[oldStatus]} to ${Status[status]}`)
+                this.log(`remote service ${fqdn} status changed from ${oldStatus && Status[oldStatus]} to ${Status[status]}`)
                 this.setServiceStatus(fqdn, status)
                 response.json({ success: true })
             }
         )
         this.httpServer = this.express.listen(port, () => {
-            console.log(`- http api server started at localhost:${port}`)
+            this.log(`http api server started at localhost:${port}`)
         })
 
         // look for other on-air services
@@ -91,7 +91,7 @@ export class Service extends EventEmitter {
             this.allServices.push(service)
             // and give it our current input status
             this.updateRemoteService(service)
-            console.log(`  - discovered a friend box! 😍 [${service.fqdn}]`)
+            this.log(`discovered a friend box! 😍 [${service.fqdn}]`)
         })
         // when service dies
         this.browser.on('down', (service: Bonjour.Service) => {
@@ -102,7 +102,7 @@ export class Service extends EventEmitter {
             // remove service status and recalculate output status
             delete this.statusByFqdn[service.fqdn]
             this.computeOutputStatus()
-            console.log(`  - friend box went offline 😔 [${service.fqdn}]`)
+            this.log(`friend box went offline 😔 [${service.fqdn}]`)
         })
 
         // announce our service
@@ -111,7 +111,7 @@ export class Service extends EventEmitter {
             port,
             type: SERVICE_TYPE,
         })
-        console.log(`- on-air bonjour service announced at ${this.service.fqdn}`)
+        this.log(`on-air bonjour service announced at ${this.service.fqdn}`)
 
         // initialize our input status to off (this will go around and set our status on all discovered services)
         this.setInputStatus(Status.Off)
@@ -127,8 +127,8 @@ export class Service extends EventEmitter {
             })
         } catch (error) {
             // we'll consider this a recoverable error for now
-            console.warn(`Error updating status on ${url}:`, error.message)
-            console.debug(error)
+            this.warn(`error updating status on ${url}: ${error.message}`)
+            this.debug('status update error:', error)
         }
     }
 
@@ -148,8 +148,20 @@ export class Service extends EventEmitter {
 
         if (this.outputStatus === newStatus) return
 
-        console.log(`  - aggregate output status changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
+        this.log(`aggregate output status changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
         this.outputStatus = newStatus
         this.emit('outputStatus.update', this.outputStatus)
+    }
+
+    private log(message: string, ...args: any[]): void {
+        console.log(`[service] ${message}`, ...args)
+    }
+
+    private warn(message: string, ...args: any[]): void {
+        console.warn(`[service] ${message}`, ...args)
+    }
+
+    private debug(message: string, ...args: any[]): void {
+        console.debug(`[service] ${message}`, args)
     }
 }

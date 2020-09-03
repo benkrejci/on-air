@@ -1,0 +1,18 @@
+[Unit]
+Description=On Air Box service
+Documentation=https://github.com/benkrejci/on-air
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=root
+ExecStartPre=
+ExecStart={{{START_COMMAND}}}
+ExecStop=
+ExecReload=
+
+[Install]
+WantedBy=multi-user.target

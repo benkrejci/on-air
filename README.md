@@ -4,7 +4,7 @@
 
 On a recent PI (2+) nvm should work just fine:
 ```sh
-sudo apt-get install nvm
+sudo apt-get install -y nvm 
 nvm install 12 --lts
 ```
 
@@ -19,28 +19,23 @@ sudo cp -R node-v12.18.3-linux-armv6l/* /usr/local
 
 ```sh
 npm i -g yarn # you may have to use sudo if you didn't install node via nvm
-yarn global add typescript pm2
-```
-
-If you used nvm, add this to your .bashrc, .zshrc, etc. so you have "pm2" on your path:
-```sh
-export PATH="$(yarn global bin):$PATH"
+yarn global add typescript
 ```
 
 ### Clone on-air and install dependencies
 
-```
+```sh
 git clone https://github.com/benkrejci/on-air.git
 cd on-air
-yarn install # install deps
-yarn build # build JS
-yarn start # test to make sure it runs (<Ctrl>+C to exit)
+./bin/install
 ```
 
-### Configure PM2 app
+### Note
 
-```
-pm2 start --name on-air-box dist/index.js # make sure you are still in on-air directory
-pm2 startup # follow the instructions if given
-pm2 save
-```
+The above install script sets up a systemd service, which will work on modern versions of Raspbian (as well as most Linux distros).
+If this doesn't work, you need to manually set up an init script so that dist/index.js runs on startup.
+
+## Configure
+
+The default configuration can be found in [config/box-config.default.yml](config/box-config.default.yml).
+The install script copies this file to config/box-config.yml so feel free to change it to suit the specific hardware configuration you are using

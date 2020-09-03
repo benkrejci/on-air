@@ -1,60 +1,169 @@
 import { EventEmitter } from 'events'
-import { Gpio } from 'onoff'
-import { Status } from './types';
+import { Gpio } from 'pigpio'
+import { Status } from './types'
+import { debounce } from 'typescript-debounce-decorator'
+
+interface RawConfig {
+    inputsByName?: {
+        [name: string]: number | {
+            mode?: string,
+            pin: number,
+        },
+    },
+    outputsByName?: {
+        [name: string]: number | {
+            mode?: string,
+            pin: number,
+            range?: number,
+        },
+    },
+    inputStatusRules?: Array<{
+        status: string,
+        inputConditions: {
+            [name: string]: number
+        },
+    }>,
+    outputValuesByStatus?: {
+        [status: string]: {
+            [name: string]: number,
+        }
+    },
+}
+
+// may use other input types in the future 🤷‍
+enum InputMode {
+    BINARY,
+}
+
+interface InputConfig {
+    readonly name: string
+    readonly mode: InputMode
+    readonly pin: number
+}
+
+enum OutputMode {
+    BINARY,
+    PWM,
+}
+
+interface OutputConfig {
+    readonly name: string
+    readonly mode: OutputMode
+    readonly pin: number
+    readonly range: number
+}
+
+interface StatusRule {
+    readonly status: Status
+    readonly inputConditions: Map<string, number>
+}
+
+interface Config {
+    readonly inputsByName?: Map<string, InputConfig>
+    readonly outputsByName?: Map<string, OutputConfig>
+    readonly inputStatusRules?: Array<StatusRule>
+    readonly outputValuesByStatus?: Map<Status, Map<string, number>>
+}
+
+const DEFAULT_PWM_RANGE = 255
+
+function parseConfig(config: RawConfig): Config {
+    if (!config.inputsByName !== !config.inputStatusRules)
+        throw new TypeError(`inputByName supplied without any inputStatusRules or vice versa`)
+    if (!config.outputsByName !== !config.outputValuesByStatus)
+        throw new TypeError(`outputByName supplied without any outputValuesByStatus or vice versa`)
+    if (!config.inputsByName && !config.outputsByName)
+        throw new TypeError(`Must provide either input config, or output config, or both (otherwise Box won't have anything to do!)`)
+
+    const inputsByName: Map<string, InputConfig> | undefined = config.inputsByName && new Map(
+        Object.entries(config.inputsByName).map(([name, _input]) => {
+            const input = typeof (_input) === 'number' ? {pin: _input} : _input
+
+            return [name, {
+                name,
+                mode: input.mode ? InputMode[input.mode as keyof typeof InputMode] : InputMode.BINARY,
+                pin: input.pin,
+            }]
+        })
+    )
+
+    const outputsByName: Map<string, OutputConfig> | undefined = config.outputsByName && new Map(
+        Object.entries(config.outputsByName).map(([name, _output]) => {
+            const output = typeof(_output) === 'number' ? { pin: _output } : _output
+
+            const mode = output.mode ? OutputMode[output.mode as keyof typeof OutputMode] : OutputMode.BINARY
+            const range = output.range !== undefined ? output.range :
+                mode === OutputMode.BINARY ? 1 : DEFAULT_PWM_RANGE
+            if (mode === OutputMode.BINARY && range !== 1)
+                throw new TypeError(`Invalid range ${output.range} for binary output ${name}. If specified, range must be 1`)
+
+            return [name, {
+                name,
+                mode,
+                range,
+                pin: output.pin,
+            }]
+        })
+    )
+
+    const inputStatusRules: Array<StatusRule> | undefined = config.inputStatusRules?.map((statusRule) => {
+        const status = Status[statusRule.status as keyof typeof Status]
+        return {
+            status,
+            inputConditions: new Map(
+                Object.entries(statusRule.inputConditions).map(([name, value]) => {
+                    const input = inputsByName?.get(name)
+                    if (input === undefined)
+                        throw new TypeError(`Unknown input with name ${name}`)
+
+                    if (input.mode === InputMode.BINARY) {
+                        if (!(value === 0 || value === 1))
+                            throw new TypeError(`Bad value ${value} for binary input ${input.name} (must be 0 or 1)`)
+                    }
+
+                    return [name, value]
+                })
+            ),
+        }
+    })
+
+    const outputValuesByStatus: Map<Status, Map<string, number>> | undefined = config.outputValuesByStatus && new Map(
+        Object.entries(config.outputValuesByStatus).map(([status, outputValues]) => {
+            return [Status[status as keyof typeof Status], new Map(
+                Object.entries(outputValues).map(([name, value]) => {
+                    const output = outputsByName?.get(name)
+                    if (output === undefined)
+                        throw new TypeError(`Unknown output with name ${name}`)
+
+                    if (value < 0 || value > output.range)
+                        throw new Error(`Invalid output value of ${value} is outside output ${output.name} range 0 - ${output.range}`)
+                    return [name, value]
+                })
+            )]
+        })
+    )
+
+    return {
+        inputsByName,
+        outputsByName,
+        inputStatusRules,
+        outputValuesByStatus,
+    }
+}
 
 const INPUT_DEBOUNCE_DELAY = 50
 
-type StatusPinTuple = [Status, number]
-
-/**
- * chose these pins to be next to each other from pins that are not reserved for alternate functions
- * this is where they are on the board:
- *
- * <---top-side--+
- *       -----   |
- *     3v3 | 5v  |
- *       2 | 5v  | r
- *       3 | G   | i
- *       4 | 14  | g
- *       G | 15  | h
- *    * 17 | 18  | t
- *    * 27 | G   |
- *      22 | 23 *| s
- *     3v3 | 24 *| i
- *      10 | G   | d
- *       9 | 25  | e
- *      11 | 8   |
- *       G | 7   |
- *       --+--   |  -- RPi 2+ only --
- *       0 | 1   | |
- *       5 | G   | v
- *       6 | 12  |
- *      13 | G   |
- *      19 | 16  |
- *      26 | 20  |
- *       G | 21  |
- *       -----   |
- *               v
- */
-const DEFAULT_OUT_STATUS_PINS: StatusPinTuple[] = [
-    [Status.Low, 17],
-    [Status.High, 27],
-]
-const DEFAULT_IN_STATUS_PINS: StatusPinTuple[] = [
-    [Status.Low, 23],
-    [Status.High, 24],
-]
-
 export class Box extends EventEmitter {
-    private readonly outputByStatus: Map<Status, Gpio> = new Map()
-    private readonly inputByStatus: Map<Status, Gpio> = new Map()
+    private readonly config: Config
+    private readonly outputByName: Map<string, Gpio> = new Map()
+    private readonly inputByName: Map<string, Gpio> = new Map()
+    private readonly inputValueByName: Map<string, number> = new Map()
 
     private inputStatus: Status = Status.Off
     private outputStatus: Status = Status.Off
 
-    public static create(outStatusPins: StatusPinTuple[] = DEFAULT_OUT_STATUS_PINS,
-                         inStatusPins: StatusPinTuple[] = DEFAULT_IN_STATUS_PINS): Box {
-        return new Box(outStatusPins, inStatusPins)
+    public static create(rawConfig: RawConfig): Box {
+        return new Box(parseConfig(rawConfig))
     }
 
     public getInputStatus() { return this.inputStatus }
@@ -62,75 +171,122 @@ export class Box extends EventEmitter {
 
     public setOutputStatus(newStatus: Status): void {
         if (this.outputStatus === newStatus) return
+        this.outputStatus = newStatus
 
-        this.outputByStatus.get(this.outputStatus)?.writeSync(0)
-        if (newStatus !== Status.Off) {
-            this.outputByStatus.get(newStatus)?.writeSync(1)
+        if (!this.config.outputValuesByStatus) return
+
+        const outputValues = this.config.outputValuesByStatus.get(newStatus)
+        const outputValueStrings: string[] = []
+        if (outputValues === undefined) {
+            console.warn(`setOutputStatus was called with status ${newStatus} which has no outputValues configured`)
+            return
         }
+        outputValues.forEach((value, name) => {
+            const outputConfig = this.config.outputsByName?.get(name)
+            const output = this.outputByName.get(name)
+            if (outputConfig === undefined || output === undefined) return // this case is already handled by parseConfig()
+            if (outputConfig.mode === OutputMode.BINARY) {
+                output.digitalWrite(value)
+            } else {
+                output.pwmWrite(value)
+            }
+            outputValueStrings.push(`${name}: ${value}`)
+        })
 
         const statusString = Status[newStatus]
-        console.log(`  - box output LED changed from ${Status[this.outputStatus]} to ${statusString}
-+--${'-'.repeat(statusString.length)}--+
-|  ${statusString}  |
-+--${'-'.repeat(statusString.length)}--+`)
-
-        this.outputStatus = newStatus
+        this.log(`box output LED changed from ${Status[this.outputStatus]} to ${statusString}
+    +--${'-'.repeat(statusString.length)}--+
+    |  ${statusString}  |
+    +--${'-'.repeat(statusString.length)}--+${outputValueStrings.map(s => `
+    - ${s}`).join()}`)
     }
 
     // this may be async in the future so just return a promise (see service.stop)
     public stop(): Promise<void> {
-        this.inputByStatus.forEach(input => input.unexport())
-        this.outputByStatus.forEach(output => output.unexport())
         return Promise.resolve()
     }
 
-    private constructor(outStatusPins?: StatusPinTuple[], inStatusPins?: StatusPinTuple[]) {
+    private constructor(config: Config) {
         super()
 
-        if (inStatusPins) {
-            inStatusPins.forEach(([status, pin]) => {
-                // 'both' edge means event should trigger when connection is made and when broken
-                const input = new Gpio(
-                    pin,
-                    'in',
-                    'both',
-                    {debounceTimeout: INPUT_DEBOUNCE_DELAY}
-                )
-                this.inputByStatus.set(status, input)
+        this.config = config
 
-                // if input value is currently "on", set input status to this one
-                if (input.readSync() === 1) this.setInputStatus(status)
+        this.log(`starting Box hardware controller with ${config.inputsByName?.size || 0} input and ${config.outputsByName?.size || 0} outputs`)
 
-                // when input value on this pin changes, update input status
-                input.watch((error, value) => {
-                    if (error) {
-                        console.error(`Error on GPIO watcher on pin ${pin}`, error)
-                    } else if (value === 0) {
-                        if (this.inputStatus === status) {
-                            // if connection broken, status is off now
-                            this.setInputStatus(Status.Off)
-                        } else {
-                            console.warn('Status input turned off that is not currently on. This should never happen! (Maybe using the wrong type of switch? Should use an ON-OFF-ON rocker)')
-                        }
-                    } else {
-                        // set to this status
-                        this.setInputStatus(status)
-                    }
+        if (config.inputsByName) {
+            this.initInput()
+        }
+
+        if (config.outputsByName) {
+            config.outputsByName.forEach((outputConfig, name) => {
+                const output = new Gpio(outputConfig.pin, {
+                    mode: Gpio.OUTPUT,
                 })
-            })
-        }
 
-        if (outStatusPins) {
-            outStatusPins.forEach(([status, pin]) => {
-                this.outputByStatus.set(status, new Gpio(pin, 'out'))
+                if (outputConfig.mode === OutputMode.PWM) {
+                    output.pwmRange(outputConfig.range)
+                }
+
+                this.outputByName.set(name, output)
             })
         }
+    }
+
+    private initInput(): void {
+        this.config.inputsByName?.forEach((inputConfig, name) => {
+            // 'both' edge means event should trigger when connection is made and when broken
+            const input = new Gpio(inputConfig.pin, {
+                mode: Gpio.INPUT,
+                pullUpDown: Gpio.PUD_UP,
+                alert: true,
+            })
+            input.glitchFilter(INPUT_DEBOUNCE_DELAY)
+
+            // set current input value
+            this.setInputValue(name, input.digitalRead())
+
+            // when input value on this pin changes, update input value
+            input.on('alert', (value, tick) => {
+                this.setInputValue(name, value)
+            })
+
+            this.inputByName.set(name, input)
+        })
+    }
+
+    private setInputValue(name: string, value: number): void {
+        this.inputValueByName.set(name, value)
+        this.calculateInputStatus()
+    }
+
+    @debounce
+    private calculateInputStatus(): void {
+        if (!this.config.inputStatusRules) return
+        for (let rule of this.config.inputStatusRules) {
+            if (this.validateInputConditions(rule.inputConditions)) {
+                this.setInputStatus(rule.status)
+                break
+            }
+        }
+    }
+
+    private validateInputConditions(inputs: Map<string, number>): boolean {
+        for (let [name, value] of inputs) {
+            if (this.inputValueByName.get(name) !== value) {
+                return false
+            }
+        }
+        return true
     }
 
     private setInputStatus(status: Status): void {
         if (this.inputStatus === status) return
-        console.log(`  - box input switch changed from ${Status[this.inputStatus]} to ${Status[status]}`)
+        this.log(`input switch changed from ${Status[this.inputStatus]} to ${Status[status]}`)
         this.inputStatus = status
         this.emit('inputStatus.update', status)
+    }
+
+    private log(message: string, ...args: any[]): void {
+        console.log(`[box] ${message}`, ...args)
     }
 }

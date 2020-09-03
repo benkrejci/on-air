@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+cat "$1" | sed -e "s@{{{START_COMMAND}}}@$2@g" > /etc/systemd/system/on-air-box.service
+chmod 0644 "/etc/systemd/system/on-air-box.service"
+systemctl daemon-reload
+systemctl enable on-air-box
+systemctl start on-air-box

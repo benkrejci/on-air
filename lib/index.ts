@@ -1,9 +1,19 @@
+import fs from 'fs'
+import YAML from 'yaml'
 import { Service } from './service'
 import { Box } from './box'
 import { Status } from "./types";
+import path from 'path'
 
 // create a box manager (monitors input switch and controls output LEDs)
-const box = Box.create()
+let boxConfig
+try {
+    boxConfig = YAML.parse(fs.readFileSync(path.join(__dirname, '../config/box-config.yml'), 'utf8'))
+} catch (e) {
+    console.error(`Error reading box config file`, e)
+    process.exit(1)
+}
+const box = Box.create(boxConfig)
 // create a service (announces our service and synchronizes output state across all services discovered on the network)
 const service = Service.create()
 // when input switch is changed on box, update service

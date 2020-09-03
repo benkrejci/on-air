@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+REPO="$(dirname "$DIR")"
+
+echo "Installing apt dependencies..."
+sudo apt-get install -y pigpio
+
+echo "Installing package dependencies..."
+yarn install
+echo "Building..."
+yarn build
+BOX_CONFIG="$REPO/config/box-config.yml"
+if [ -f "$BOX_CONFIG" ]; then
+  echo "Skipping copy default box-config.yml because $BOX_CONFIG already exists."
+else
+  echo "Copying default box-config.yml..."
+  cp "$REPO/config/box-config.default.yml" "$BOX_CONFIG"
+fi
+
+echo "Installing and starting systemd service..."
+START_COMMAND="$(which node) $REPO/dist/index.js"
+sudo "$DIR/.installService" "$REPO/config/on-air-box.service" "$START_COMMAND"
