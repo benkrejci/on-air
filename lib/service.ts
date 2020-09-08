@@ -3,14 +3,12 @@ import Bonjour from 'bonjour'
 import { EventEmitter } from 'events'
 import express from 'express'
 import axios from 'axios'
-import { Status } from './types'
 import { Server } from 'http'
 import { isIPv4 } from 'net'
+import { Config, SPECIAL_OFF_STATUS } from './config'
 
 const SERVICE_TYPE = 'on-air-box'
-const DEFAULT_SERVICE_PORT = 8991
 const API_PATH = 'api/v1'
-const DEFAULT_SERVICE_NAME = `on-air-box-${os.hostname()}`
 
 const bonjour = Bonjour()
 
@@ -26,6 +24,8 @@ process.on('exit', () => {
  * At any time, all outputs will reflect the highest state present on any input switch from any on-air service
  */
 export class Service extends EventEmitter {
+    private readonly config: Config
+    private readonly statusIndicesByStatus: Map<string, number>
     private readonly express = express().use(express.json(), express.urlencoded({ extended: true }))
     private readonly httpServer: Server
     // all discovered services (including this one)
@@ -33,18 +33,20 @@ export class Service extends EventEmitter {
     // this service
     private readonly service: Bonjour.Service
     private readonly browser: Bonjour.Browser
-    private readonly statusByFqdn: { [key: string]: Status } = {}
+    private readonly statusByFqdn: { [key: string]: string } = {}
 
     // what we should be showing locally (highest status of all services)
-    private outputStatus: Status = Status.Off
+    private outputStatus: string = SPECIAL_OFF_STATUS
 
-    public static create(name: string = DEFAULT_SERVICE_NAME,
-                         port: number = DEFAULT_SERVICE_PORT): Service {
-        return new Service(name, port)
+    public static create(config: Config): Service {
+        return new Service(config)
     }
 
-    public async setInputStatus(inputStatus: Status): Promise<void> {
-        if (!this.service) throw new Error('Can\'t set status before bonjour service has been initialized')
+    public async setInputStatus(inputStatus: string): Promise<void> {
+        if (!this.service) throw new Error(`Can't set status before bonjour service has been initialized`)
+
+        if (!this.config.statuses.includes(inputStatus))
+            throw new Error(`setInputStatus called with status ${inputStatus} which is unrecognized by this service! This should never happen...`)
 
         // update our status in status map and update our output
         this.setServiceStatus(this.service.fqdn, inputStatus)
@@ -62,22 +64,30 @@ export class Service extends EventEmitter {
         ])
     }
 
-    private constructor(name: string, port: number) {
+    private constructor(config: Config) {
         super()
+
+        this.config = config
+        this.statusIndicesByStatus = new Map(config.statuses.map((status, index) => [status, index]))
 
         // install API server
         this.express.put(
             `/${API_PATH}/status`,
             (request, response) => {
-                const { fqdn, status }: { fqdn: string, status: Status } = request.body
-                const oldStatus = this.statusByFqdn[fqdn]
-                this.log(`remote service ${fqdn} status changed from ${oldStatus && Status[oldStatus]} to ${Status[status]}`)
-                this.setServiceStatus(fqdn, status)
-                response.json({ success: true })
+                const { fqdn, status }: { fqdn: string, status: string } = request.body
+                if (!this.config.statuses.includes(status)) {
+                    this.error(`remote service ${fqdn} tried to set status ${status} which is unrecognized by this service! Ensure all services on the network are using the same config`)
+                    response.json({ success: false })
+                } else {
+                    const oldStatus = this.statusByFqdn[fqdn]
+                    this.log(`remote service ${fqdn} status changed from ${oldStatus && oldStatus} to ${status}`)
+                    this.setServiceStatus(fqdn, status)
+                    response.json({ success: true })
+                }
             }
         )
-        this.httpServer = this.express.listen(port, () => {
-            this.log(`http api server started at localhost:${port}`)
+        this.httpServer = this.express.listen(config.service.port, () => {
+            this.log(`http api server started at localhost:${config.service.port}`)
         })
 
         // look for other on-air services
@@ -86,12 +96,13 @@ export class Service extends EventEmitter {
         }, (service: Bonjour.Service) => {
             // when new service comes online; this callback is equivalent to browser.on('up', func)
             // don't count this service
-            if (service.name === name) return
+            if (service.name === config.service.name) return
+
+            this.log(`discovered a friend box! 😍 [${service.fqdn}]`)
             // add it to our list of services
             this.allServices.push(service)
             // and give it our current input status
             this.updateRemoteService(service)
-            this.log(`discovered a friend box! 😍 [${service.fqdn}]`)
         })
         // when service dies
         this.browser.on('down', (service: Bonjour.Service) => {
@@ -107,24 +118,26 @@ export class Service extends EventEmitter {
 
         // announce our service
         this.service = bonjour.publish({
-            name,
-            port,
+            name: config.service.name,
+            port: config.service.port,
             type: SERVICE_TYPE,
         })
         this.log(`on-air bonjour service announced at ${this.service.fqdn}`)
 
         // initialize our input status to off (this will go around and set our status on all discovered services)
-        this.setInputStatus(Status.Off)
+        this.setInputStatus(SPECIAL_OFF_STATUS)
     }
 
     private async updateRemoteService(service: Bonjour.Service): Promise<void> {
         const ip = service.addresses.find((a: string) => isIPv4(a))
         const url = `http://${ip}:${service.port}/${API_PATH}/status`
         try {
-            await axios.put(url, {
+            const response = await axios.put(url, {
                 fqdn: this.service.fqdn,
                 status: this.statusByFqdn[this.service.fqdn],
             })
+            if (response.status !== 200 || !response.data?.success)
+                throw new Error(`bad response [${response.status}]: ${response.data}`)
         } catch (error) {
             // we'll consider this a recoverable error for now
             this.warn(`error updating status on ${url}: ${error.message}`)
@@ -132,7 +145,7 @@ export class Service extends EventEmitter {
         }
     }
 
-    private setServiceStatus(fqdn: string, status: Status): void {
+    private setServiceStatus(fqdn: string, status: string): void {
         // set status in the status map
         this.statusByFqdn[fqdn] = status
         // update output status that we should be showing
@@ -140,15 +153,22 @@ export class Service extends EventEmitter {
     }
 
     private computeOutputStatus(): void {
-        let newStatus: Status = Status.Off
+        const highestStatus = this.config.statuses[this.config.statuses.length - 1]
+        let newStatus: string = SPECIAL_OFF_STATUS
+        let newStatusIndex: number = <number>this.statusIndicesByStatus.get(newStatus)
+        // loop through all input statuses being reported by services and find the highest one
         for (let status of Object.values(this.statusByFqdn)) {
-            if (status >= newStatus) newStatus = status
-            if (status === Status.High) break
+            const statusIndex = <number>this.statusIndicesByStatus.get(status)
+            if (statusIndex >= newStatusIndex) {
+                newStatus = status
+                newStatusIndex = statusIndex
+            }
+            if (status === highestStatus) break
         }
 
         if (this.outputStatus === newStatus) return
 
-        this.log(`aggregate output status changed from ${Status[this.outputStatus]} to ${Status[newStatus]}`)
+        this.log(`aggregate output status changed from ${this.outputStatus} to ${newStatus}`)
         this.outputStatus = newStatus
         this.emit('outputStatus.update', this.outputStatus)
     }
@@ -159,6 +179,10 @@ export class Service extends EventEmitter {
 
     private warn(message: string, ...args: any[]): void {
         console.warn(`[service] ${message}`, ...args)
+    }
+
+    private error(message: string, ...args: any[]): void {
+        console.error(`[service] ${message}`, ...args)
     }
 
     private debug(message: string, ...args: any[]): void {
