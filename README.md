@@ -70,7 +70,7 @@ This is best build I currently have. I use darlington transistors to switch the 
   - 5x 12Ω
 - Buck converter (for powering Pi from 9v source) [6 for $10 on Amazon](https://www.amazon.com/gp/product/B076H3XHXP)
 - ON-OFF-ON rocker switch [I like this chunky one (2 for $13) but there are cheaper options](https://www.amazon.com/gp/product/B07PDQN6P8)
-- 7-9V 1A DC power supply (any higher than 9V and you'll be dumping a lot of power into the LM317s as heat) [I used this 8.5V one $8 on Amazon](https://www.amazon.com/gp/product/B08CH9C3K6)
+- 7.5-9V 1A DC power supply (any higher than 9V and you'll be dumping a lot of power into the LM317s as heat) [I used this 8.5V one $8 on Amazon](https://www.amazon.com/gp/product/B08CH9C3K6)
 
 ### Circuit
 
@@ -79,4 +79,6 @@ This is best build I currently have. I use darlington transistors to switch the 
 ### Notes
 
 - You could improve the efficiency and use a higher voltage power supply by replacing the LM317-resistor pairs (top right) with switching constant current regulators [like this one for $13](https://www.ledsupply.com/led-drivers/buckpuck-dc-led-drivers) but these devices are relatively expensive and you really want one for each LED that you drive.
-- 
+- You could also simplify this circuit and do away with the buck converter by just using 2 power supplies: a 5v one to power the Pi and a higher voltage LED supply.
+- Also FYI, the reason for the higher voltage power supply even though the LEDs themselves only drop 2.5-3.6V is that an LM317 requires at a minimum of 3V voltage drop across it with an additional 1V of headroom. So you want a minimum of 7.6V and not much higher, as the higher you go, the more power gets dumped into heat by the LM317.
+- I also looked into using FETs for switching instead of darlingtons, but I don't have any on hand that switch on properly with 3V logic level input and those can be hard to find. If you are switching more powerful LEDs, though, you will likely want to use an N-channel MOSFET, possibly with a logic level shifter [like this $4 one from Adafruit](https://www.adafruit.com/product/757).
