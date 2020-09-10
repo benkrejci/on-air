@@ -50,8 +50,8 @@ If this doesn't work, you need to manually set up an init script so that dist/in
 
 ## Configure
 
-The default configuration can be found in [config/box-config.default.yml](config/config.default.yml).
-The install script copies this file to config/box-config.yml so feel free to change it to suit the specific hardware configuration you are using. See [RawConfig interface](lib/config.ts#L3) for available configuration options.
+The default configuration can be found in [config/config.default.yml](config/config.default.yml).
+The install script copies this file to config/config.yml so feel free to change it to suit the specific hardware configuration you are using. See [RawConfig interface](lib/config.ts#L3) for available configuration options.
 
 # Hardware
 
