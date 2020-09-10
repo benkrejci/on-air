@@ -10,12 +10,12 @@ echo "Installing package dependencies..."
 yarn install
 echo "Building..."
 yarn build
-BOX_CONFIG="$REPO/config/box-config.yml"
+BOX_CONFIG="$REPO/config/config.yml"
 if [ -f "$BOX_CONFIG" ]; then
-  echo "Skipping copy default box-config.yml because $BOX_CONFIG already exists."
+  echo "Skipping copy default config.yml because $BOX_CONFIG already exists."
 else
   echo "Copying default box-config.yml..."
-  cp "$REPO/config/box-config.default.yml" "$BOX_CONFIG"
+  cp "$REPO/config/config.default.yml" "$BOX_CONFIG"
 fi
 
 echo "Installing and starting systemd service..."
