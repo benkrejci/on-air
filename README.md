@@ -5,8 +5,8 @@ This solves the problem of one of us (mostly me) barging in on the other while t
 
 Each box will discover any other boxes on the network and communicate automatically with each other to reach consensus about shared "status".
 
-By default, status can be "off", "low", or "high", which are to "green", "yellow", and "red" respectively.
-This can, however, be configured to support different use cases and hardware configurations.
+By default, status can be "off", "low", or "high", which are to "off", "yellow", and "red" respectively.
+This can, however, be configured to support different use cases and hardware configurations. Theoretically, if you hooked up the blue LED in the RGB diode, you could use any rgb color and as many statuses as you want!
 
 # Installation
 
@@ -18,7 +18,7 @@ sudo apt install -y nvm
 nvm install 12 --lts
 ```
 
-On a 1st gen Pi, this worked for me:
+On a 1st gen Pi (and Pi Zero W which is what I ultimately used for both my boxes), this worked for me:
 ```sh
 wget https://unofficial-builds.nodejs.org/download/release/v12.18.3/node-v12.18.3-linux-armv6l.tar.gz
 tar -xzf node-v12.18.3-linux-armv6l.tar.gz
