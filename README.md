@@ -76,9 +76,25 @@ This is best build I currently have. I use darlington transistors to switch the 
 - ON-OFF-ON rocker switch [I like this chunky one (2 for $13) but there are cheaper options](https://www.amazon.com/gp/product/B07PDQN6P8)
 - 7.5-9V 1A DC power supply (any higher than 9V and you'll be dumping a lot of power into the LM317s as heat) [I used this 8.5V one $8 on Amazon](https://www.amazon.com/gp/product/B08CH9C3K6)
 
-### Circuit
+### Circuits
 
-![Circuit Schematic](./docs/circuit-schematic-0.svg)
+#### Simple circuit
+
+This is the simplest version of the driver circuit I made which only uses red and green and doesn't have any capacitors for decoupling.
+
+Source: [easyeda.com/benkrejci/on-air-box](https://easyeda.com/benkrejci/on-air-box)
+
+![Circuit Schematic](docs/simple-schematic.svg)
+
+#### PCB circuit
+
+Here's a PCB I made which has room for 3 LEDs if desired, as well as decoupling capacitors. There are pads for up to 5 resistors for setting the red current, and 4 for each of green and blue. Choose number and values of resistors based on desired current and power dissipation (see next section). The PCB only requires 1 layer so you can get them made pretty cheaply ($2 for 5 on [jlcpcb.com](https://jlcpcb.com/)).
+
+Source: [easyeda.com/benkrejci/on-air-box-2](https://easyeda.com/benkrejci/on-air-box-2)
+
+![Reference Schematic](docs/pcb-reference-schematic.svg)
+
+![Circuit Schematic](docs/pcb.svg)
 
 ### Resistor values and power dissipation
 
@@ -96,7 +112,7 @@ So for the red circuit in my example `1.25V * 0.313A = 0.392W` is the power diss
 
 **Finally, let's figure out the heat that will be dissipated by the LM317. To do this, we calculate the voltage drop across it and multiply it by the current `(Vin - Vled - Vref) * I = Pu` where Vin is input voltage, Vled is voltage drop across LED, and Vref is the LM317 reference voltage of 1.25V.**
  
- For my red LED `8.5V - 2.5V - 1.25V = 4.75V`. This is more than the minimum 3V the LM317 needs to operate, but will dissipate `4.75V * 0.313A = 1.49W` of heat. If you are putting this much power into an LM317 you should probably put a heatsink on it and certainly do if you use more than 8.5V with this setup. Mine gets super hot so I added one.
+ For my red LED `8.5V - 2.5V - 1.25V = 4.75V`. This is more than the minimum 3V the LM317 needs to operate, but will dissipate `4.75V * 0.313A = 1.49W` of heat. If you are putting [more than 0.25W into an LM317, you need a heatsink](http://www.reuk.co.uk/wordpress/electric-circuit/lm317t-heatsinking/).
 
 ### Notes
 
