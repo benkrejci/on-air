@@ -4,15 +4,18 @@ import { Service } from './service'
 import { Box } from './box'
 import path from 'path'
 import { parseConfig } from './config'
+import validateRawConfig from './config.validator'
 
 // create a box manager (monitors input switch and controls output LEDs)
 let config
 try {
     config = parseConfig(
-        YAML.parse(
-            fs.readFileSync(
-                path.join(__dirname, '../config/config.yml'),
-                'utf8'
+        validateRawConfig(
+            YAML.parse(
+                fs.readFileSync(
+                    path.join(__dirname, '../config/config.yml'),
+                    'utf8'
+                )
             )
         )
     )

@@ -1,9 +1,20 @@
 import os from 'os'
 
-type Pull = 'up' | 'down'
+type InputMode = 'ON_OFF' | 'TRIGGER'
+type InputPull = 'UP' | 'DOWN'
+type OutputMode = 'ON_OFF' | 'PWM'
+type TriggerType = 'STATUS' | 'BRIGHTNESS'
 
-interface RawConfig {
+const SERVICE_PORT_DEFAULT = 8991
+const SERVICE_NAME_DEFAULT = `on-air-box-${os.hostname()}`
+const INPUT_DEBOUNCE_DELAY_DEFAULT = 50 * 1000
+const INPUT_MODE_DEFAULT: InputMode = 'ON_OFF'
+const INPUT_PULL_DEFAULT: InputPull = 'DOWN'
+const OUTPUT_MODE_DEFAULT: OutputMode = 'ON_OFF'
+
+export interface RawConfig {
     statuses: string[]
+    defaultStatus: string
 
     service?: {
         port?: number,
@@ -11,29 +22,33 @@ interface RawConfig {
     }
 
     box: {
-        inputDebounceDelay: number
+        // in nanoseconds (so default 50ms)
+        inputDebounceDelay?: number
+        // float between 0 and 1
+        defaultBrightness?: number
 
         inputsByName?: {
             [name: string]: number | {
-                mode?: string
-                pull?: Pull
+                mode?: InputMode
+                pull?: InputPull
                 pin: number
+                onStatus?: string
+                trigger?: {
+                    type: TriggerType
+                    value: any
+                }
             }
         }
+
         outputsByName?: {
             [name: string]: number | {
-                mode?: string
+                mode?: OutputMode
                 pin: number
                 range?: number
                 inverted?: boolean
             }
         }
-        inputStatusRules?: Array<{
-            status: string
-            inputConditions: {
-                [name: string]: number
-            }
-        }>
+
         outputValuesByStatus?: {
             [status: string]: {
                 [name: string]: number
@@ -42,29 +57,21 @@ interface RawConfig {
     }
 }
 
-const DEFAULT_SERVICE_PORT = 8991
-const DEFAULT_SERVICE_NAME = `on-air-box-${os.hostname()}`
-
 export interface ServiceConfig {
     readonly port: number
     readonly name: string
 }
 
-// may use other input types in the future 🤷‍
-export enum InputMode {
-    BINARY,
-}
-
 export interface InputConfig {
     readonly name: string
     readonly mode: InputMode
-    readonly pull: Pull
+    readonly pull: InputPull
     readonly pin: number
-}
-
-export enum OutputMode {
-    BINARY,
-    PWM,
+    readonly onStatus?: string
+    readonly trigger?: {
+        readonly type: TriggerType
+        readonly value: any
+    }
 }
 
 export interface OutputConfig {
@@ -75,22 +82,17 @@ export interface OutputConfig {
     readonly inverted: boolean
 }
 
-export interface StatusRule {
-    readonly status: string
-    readonly inputConditions: Map<string, number>
-}
-
 export interface BoxConfig {
+    readonly inputDebounceDelay: number
+    readonly defaultBrightness: number
     readonly inputsByName?: Map<string, InputConfig>
     readonly outputsByName?: Map<string, OutputConfig>
-    readonly inputStatusRules?: Array<StatusRule>
     readonly outputValuesByStatus?: Map<string, Map<string, number>>
 }
 
-export const SPECIAL_OFF_STATUS = 'off'
-
 export interface Config {
     readonly statuses: Array<string>
+    readonly defaultStatus: string
     readonly service: ServiceConfig
     readonly box: BoxConfig
 }
@@ -100,43 +102,64 @@ const DEFAULT_PWM_RANGE = 255
 export function parseConfig(config: RawConfig): Config {
     if (!config.statuses?.length)
         throw new TypeError(`Must provide at least one status in "statuses"`)
-    if (!config.box.inputsByName !== !config.box.inputStatusRules)
-        throw new TypeError(`inputByName supplied without any inputStatusRules or vice versa`)
+    if (!config.defaultStatus?.length)
+        throw new TypeError(`Must provide defaultStatus`)
     if (!config.box.outputsByName !== !config.box.outputValuesByStatus)
         throw new TypeError(`outputByName supplied without any outputValuesByStatus or vice versa`)
     if (!config.box.inputsByName && !config.box.outputsByName)
         throw new TypeError(`Must provide either input config, or output config, or both (otherwise Box won't have anything to do!)`)
 
     const statuses: Array<string> = config.statuses.slice()
-    if (!config.statuses.includes(SPECIAL_OFF_STATUS))
-        throw new TypeError(`Missing required "${SPECIAL_OFF_STATUS}" status (this status is used while initializing and when service is stopped`)
 
     const service: ServiceConfig = {
-        port: config.service?.port !== undefined ? config.service.port : DEFAULT_SERVICE_PORT,
-        name: config.service?.name !== undefined ? config.service.name : DEFAULT_SERVICE_NAME,
+        port: config.service?.port !== undefined ? config.service.port : SERVICE_PORT_DEFAULT,
+        name: config.service?.name !== undefined ? config.service.name : SERVICE_NAME_DEFAULT,
     }
 
+    const inputDebounceDelay = config.box.inputDebounceDelay !== undefined ? config.box.inputDebounceDelay : INPUT_DEBOUNCE_DELAY_DEFAULT
+    const defaultBrightness = config.box.defaultBrightness !== undefined ? config.box.defaultBrightness : 1
+
     const inputsByName: Map<string, InputConfig> | undefined = config.box.inputsByName && new Map(
-        Object.entries(config.box.inputsByName).map(([name, _input]) => {
-            const input = typeof (_input) === 'number' ? {pin: _input} : _input
+        Object.entries(config.box.inputsByName).map(([name, input]) => {
+            if (typeof(input) === 'number') {
+                input = { pin: input }
+            }
+            const mode = input.mode || INPUT_MODE_DEFAULT
+            const pull = input.pull || INPUT_PULL_DEFAULT
+
+            let trigger, onStatus
+            if (input.mode === 'ON_OFF') {
+                if (!input.onStatus) throw new TypeError(`Missing onStatus option for input ${name} with mode "${input.mode}"`)
+                onStatus = input.onStatus
+            } else if (input.mode === 'TRIGGER') {
+                if (!input.trigger) throw new TypeError(`Missing trigger options for input "${name}" with mode "${input.mode}"`)
+                trigger = {
+                    type: input.trigger.type,
+                    value: input.trigger.value,
+                }
+            }
 
             return [name, {
                 name,
-                mode: input.mode ? InputMode[input.mode as keyof typeof InputMode] : InputMode.BINARY,
-                pull: input.pull || 'down',
+                mode,
+                pull,
                 pin: input.pin,
+                trigger,
+                onStatus
             }]
         })
     )
 
     const outputsByName: Map<string, OutputConfig> | undefined = config.box.outputsByName && new Map(
-        Object.entries(config.box.outputsByName).map(([name, _output]) => {
-            const output = typeof(_output) === 'number' ? { pin: _output } : _output
+        Object.entries(config.box.outputsByName).map(([name, output]) => {
+            if (typeof(output) === 'number') {
+                output = { pin: output }
+            }
 
-            const mode = output.mode ? OutputMode[output.mode as keyof typeof OutputMode] : OutputMode.BINARY
+            const mode = output.mode || OUTPUT_MODE_DEFAULT
             const range = output.range !== undefined ? output.range :
-                mode === OutputMode.BINARY ? 1 : DEFAULT_PWM_RANGE
-            if (mode === OutputMode.BINARY && range !== 1)
+                mode === 'ON_OFF' ? 1 : DEFAULT_PWM_RANGE
+            if (mode === 'ON_OFF' && range !== 1)
                 throw new TypeError(`Invalid range ${output.range} for binary output ${name}. If specified, range must be 1`)
 
             return [name, {
@@ -148,28 +171,6 @@ export function parseConfig(config: RawConfig): Config {
             }]
         })
     )
-
-    const inputStatusRules: Array<StatusRule> | undefined = config.box.inputStatusRules?.map((statusRule) => {
-        if (!statuses.includes(statusRule.status))
-            throw new TypeError(`Invalid status ${statusRule.status}; not present in statuses array`)
-        return {
-            status: statusRule.status,
-            inputConditions: new Map(
-                Object.entries(statusRule.inputConditions).map(([name, value]) => {
-                    const input = inputsByName?.get(name)
-                    if (input === undefined)
-                        throw new TypeError(`Unknown input with name ${name}`)
-
-                    if (input.mode === InputMode.BINARY) {
-                        if (!(value === 0 || value === 1))
-                            throw new TypeError(`Bad value ${value} for binary input ${input.name} (must be 0 or 1)`)
-                    }
-
-                    return [name, value]
-                })
-            ),
-        }
-    })
 
     const outputValuesByStatus: Map<string, Map<string, number>> | undefined = config.box.outputValuesByStatus && new Map(
         Object.entries(config.box.outputValuesByStatus).map(([status, outputValues]) => {
@@ -191,11 +192,13 @@ export function parseConfig(config: RawConfig): Config {
 
     return {
         statuses,
+        defaultStatus: config.defaultStatus,
         service,
         box: {
+            inputDebounceDelay,
+            defaultBrightness,
             inputsByName,
             outputsByName,
-            inputStatusRules,
             outputValuesByStatus,
         }
     }

@@ -1,18 +1,16 @@
 import { EventEmitter } from 'events'
 import { Gpio } from 'pigpio'
-import { Config, OutputMode, SPECIAL_OFF_STATUS } from './config'
+import { Config } from './config'
 import { debounce } from './decorators'
-
-const INPUT_DEBOUNCE_DELAY = 50 * 1000 // in nanoseconds (so 50ms)
 
 export class Box extends EventEmitter {
     private readonly config: Config
     private readonly outputByName: Map<string, Gpio> = new Map()
     private readonly inputByName: Map<string, Gpio> = new Map()
-    private readonly inputValueByName: Map<string, number> = new Map()
 
-    private inputStatus: string = SPECIAL_OFF_STATUS
-    private outputStatus: string = SPECIAL_OFF_STATUS
+    private inputStatus: string
+    private outputStatus: string
+    private brightness: number = 1
 
     public static create(config: Config): Box {
         return new Box(config)
@@ -24,13 +22,16 @@ export class Box extends EventEmitter {
     public setOutputStatus(newStatus: string): void {
         if (this.outputStatus === newStatus) return
         this.outputStatus = newStatus
+        this.updateOutputStatus()
+    }
 
-        if (!this.config.box.outputValuesByStatus) return
+    private updateOutputStatus(): void {
+        if (!this.config.box.outputValuesByStatus || !this.outputStatus) return
 
-        const outputValues = this.config.box.outputValuesByStatus.get(newStatus)
+        const outputValues = this.config.box.outputValuesByStatus.get(this.outputStatus)
         const outputValueStrings: string[] = []
         if (outputValues === undefined) {
-            console.warn(`setOutputStatus was called with status ${newStatus} which has no outputValues configured`)
+            console.warn(`setOutputStatus was called with status ${this.outputStatus} which has no outputValues configured`)
             return
         }
         outputValues.forEach((value, name) => {
@@ -39,24 +40,30 @@ export class Box extends EventEmitter {
             if (outputConfig === undefined || output === undefined) return // this case is already handled by parseConfig()
 
             if (outputConfig.inverted) value = outputConfig.range - value
-            if (outputConfig.mode === OutputMode.BINARY) {
+            if (outputConfig.mode === 'ON_OFF') {
                 output.digitalWrite(value)
             } else {
+                value = Math.round(this.brightness * value)
                 output.pwmWrite(value)
             }
             outputValueStrings.push(`${name}: ${value}`)
         })
 
-        this.log(`box output LED changed from ${this.outputStatus} to ${newStatus}
-    +--${'-'.repeat(newStatus.length)}--+
-    |  ${newStatus}  |
-    +--${'-'.repeat(newStatus.length)}--+${outputValueStrings.map(s => `
+        this.log(`box output LED changed to ${this.outputStatus} at brightness ${this.brightness}
+    +--${'-'.repeat(this.outputStatus.length)}--+
+    |  ${this.outputStatus}  |
+    +--${'-'.repeat(this.outputStatus.length)}--+${outputValueStrings.map(s => `
     - ${s}`).join()}`)
+    }
+
+    public setBrightness(level: number) {
+        if (level < 0 || level > 1) throw new TypeError(`Invalid brightness ${level}, must be between 0 and 1`)
+        this.brightness = level
     }
 
     // this may be async in the future so just return a promise (see service.stop)
     public stop(): Promise<void> {
-        this.setOutputStatus(SPECIAL_OFF_STATUS)
+        this.setOutputStatus(this.config.defaultStatus)
         return Promise.resolve()
     }
 
@@ -64,6 +71,8 @@ export class Box extends EventEmitter {
         super()
 
         this.config = config
+        this.inputStatus = this.outputStatus = this.config.defaultStatus
+        this.setBrightness(config.box.defaultBrightness)
 
         this.log(`starting Box hardware controller with ${config.box.inputsByName?.size || 0} input and ${config.box.outputsByName?.size || 0} outputs`)
 
@@ -75,10 +84,10 @@ export class Box extends EventEmitter {
         this.config.box.inputsByName?.forEach((inputConfig, name) => {
             const input = new Gpio(inputConfig.pin, {
                 mode: Gpio.INPUT,
-                pullUpDown: inputConfig.pull === 'up' ? Gpio.PUD_UP : Gpio.PUD_DOWN,
+                pullUpDown: inputConfig.pull === 'UP' ? Gpio.PUD_UP : Gpio.PUD_DOWN,
                 alert: true,
             })
-            input.glitchFilter(INPUT_DEBOUNCE_DELAY)
+            input.glitchFilter(this.config.box.inputDebounceDelay)
 
             // set current input value
             this.setInputValue(name, input.digitalRead())
@@ -98,7 +107,7 @@ export class Box extends EventEmitter {
                 mode: Gpio.OUTPUT,
             })
 
-            if (outputConfig.mode === OutputMode.PWM) {
+            if (outputConfig.mode === 'PWM') {
                 output.pwmRange(outputConfig.range)
             }
 
@@ -106,32 +115,24 @@ export class Box extends EventEmitter {
         })
     }
 
+    @debounce()
     private setInputValue(name: string, value: number): void {
         this.log(`input ${name} set to ${value}`)
-        this.inputValueByName.set(name, value)
-        this.calculateInputStatus()
-    }
 
-    @debounce()
-    private calculateInputStatus(): void {
-        if (!this.config.box.inputStatusRules) return
-        for (let rule of this.config.box.inputStatusRules) {
-            if (this.validateInputConditions(rule.inputConditions)) {
-                this.setInputStatus(rule.status)
-                return
+        const inputConfig = this.config.box.inputsByName?.get(name)
+        if (inputConfig?.mode === 'ON_OFF') {
+            if (value === 1) {
+                if (inputConfig.onStatus) this.setInputStatus(inputConfig.onStatus)
+            } else {
+                this.setInputStatus(this.config.defaultStatus)
+            }
+        } else if (inputConfig?.mode === 'TRIGGER') {
+            if (inputConfig.trigger?.type === 'STATUS') {
+                this.setInputStatus(inputConfig.trigger.value)
+            } else if (inputConfig.trigger?.type === 'BRIGHTNESS') {
+                this.setBrightness(inputConfig.trigger.value)
             }
         }
-        this.warn(`no status rule matched input state 😫 setting to ${SPECIAL_OFF_STATUS}`)
-        this.setInputStatus(SPECIAL_OFF_STATUS)
-    }
-
-    private validateInputConditions(inputs: Map<string, number>): boolean {
-        for (let [name, value] of inputs) {
-            if (this.inputValueByName.get(name) !== value) {
-                return false
-            }
-        }
-        return true
     }
 
     private setInputStatus(status: string): void {

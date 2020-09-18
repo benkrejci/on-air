@@ -5,7 +5,7 @@ import express from 'express'
 import axios from 'axios'
 import { Server } from 'http'
 import { isIPv4 } from 'net'
-import { Config, SPECIAL_OFF_STATUS } from './config'
+import { Config } from './config'
 
 const SERVICE_TYPE = 'on-air-box'
 const API_PATH = 'api/v1'
@@ -36,7 +36,7 @@ export class Service extends EventEmitter {
     private readonly statusByFqdn: { [key: string]: string } = {}
 
     // what we should be showing locally (highest status of all services)
-    private outputStatus: string = SPECIAL_OFF_STATUS
+    private outputStatus: string
 
     public static create(config: Config): Service {
         return new Service(config)
@@ -68,6 +68,7 @@ export class Service extends EventEmitter {
         super()
 
         this.config = config
+        this.outputStatus = config.defaultStatus
         this.statusIndicesByStatus = new Map(config.statuses.map((status, index) => [status, index]))
 
         // install API server
@@ -125,7 +126,7 @@ export class Service extends EventEmitter {
         this.log(`on-air bonjour service announced at ${this.service.fqdn}`)
 
         // initialize our input status to off (this will go around and set our status on all discovered services)
-        this.setInputStatus(SPECIAL_OFF_STATUS)
+        this.setInputStatus(this.config.defaultStatus)
     }
 
     private async updateRemoteService(service: Bonjour.Service): Promise<void> {
@@ -154,7 +155,7 @@ export class Service extends EventEmitter {
 
     private computeOutputStatus(): void {
         const highestStatus = this.config.statuses[this.config.statuses.length - 1]
-        let newStatus: string = SPECIAL_OFF_STATUS
+        let newStatus: string = this.config.defaultStatus
         let newStatusIndex: number = <number>this.statusIndicesByStatus.get(newStatus)
         // loop through all input statuses being reported by services and find the highest one
         for (let status of Object.values(this.statusByFqdn)) {
