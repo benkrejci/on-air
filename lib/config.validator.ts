@@ -13,12 +13,49 @@ export const RawConfigSchema = {
   "defaultProperties": [
   ],
   "definitions": {
-    "TriggerType": {
+    "TransformFunction": {
       "enum": [
-        "BRIGHTNESS",
-        "STATUS"
+        "CONSTANT",
+        "EXP",
+        "LINEAR",
+        "LOG",
+        "SIN"
       ],
       "type": "string"
+    },
+    "TransformFunctionRawConfig": {
+      "defaultProperties": [
+      ],
+      "properties": {
+        "base": {
+          "type": "number"
+        },
+        "coefficient": {
+          "type": "number"
+        },
+        "function": {
+          "$ref": "#/definitions/TransformFunction"
+        },
+        "max": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "period": {
+          "type": "number"
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "function"
+      ],
+      "type": "object"
     }
   },
   "properties": {
@@ -39,6 +76,13 @@ export const RawConfigSchema = {
                 "defaultProperties": [
                 ],
                 "properties": {
+                  "action": {
+                    "enum": [
+                      "BRIGHTNESS",
+                      "STATUS"
+                    ],
+                    "type": "string"
+                  },
                   "mode": {
                     "enum": [
                       "ON_OFF",
@@ -46,8 +90,9 @@ export const RawConfigSchema = {
                     ],
                     "type": "string"
                   },
-                  "onStatus": {
-                    "type": "string"
+                  "offValue": {
+                  },
+                  "onValue": {
                   },
                   "pin": {
                     "type": "number"
@@ -59,21 +104,11 @@ export const RawConfigSchema = {
                     ],
                     "type": "string"
                   },
-                  "trigger": {
-                    "defaultProperties": [
+                  "type": {
+                    "enum": [
+                      "GPIO"
                     ],
-                    "properties": {
-                      "type": {
-                        "$ref": "#/definitions/TriggerType"
-                      },
-                      "value": {
-                      }
-                    },
-                    "required": [
-                      "type",
-                      "value"
-                    ],
-                    "type": "object"
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -90,16 +125,28 @@ export const RawConfigSchema = {
           ],
           "type": "object"
         },
-        "outputValuesByStatus": {
-          "additionalProperties": {
-            "additionalProperties": {
+        "lightSensor": {
+          "defaultProperties": [
+          ],
+          "properties": {
+            "address": {
               "type": "number"
             },
-            "defaultProperties": [
-            ],
-            "type": "object"
+            "bus": {
+              "type": "number"
+            },
+            "model": {
+              "enum": [
+                "ADAFRUIT_BH1750"
+              ],
+              "type": "string"
+            },
+            "transform": {
+              "$ref": "#/definitions/TransformFunctionRawConfig"
+            }
           },
-          "defaultProperties": [
+          "required": [
+            "model"
           ],
           "type": "object"
         },
@@ -136,6 +183,26 @@ export const RawConfigSchema = {
                 "type": "number"
               }
             ]
+          },
+          "defaultProperties": [
+          ],
+          "type": "object"
+        },
+        "outputsByStatus": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TransformFunctionRawConfig"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "defaultProperties": [
+            ],
+            "type": "object"
           },
           "defaultProperties": [
           ],

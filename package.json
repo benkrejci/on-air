@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "axios": "^0.20.0",
+    "bh1750_lux": "^1.0.1",
     "bonjour": "^3.5.0",
     "debounce": "^1.2.0",
     "express": "^4.17.1",
