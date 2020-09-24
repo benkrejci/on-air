@@ -1,3 +1,4 @@
+import _ from 'lodash'
 import os from 'os'
 
 type GpioInputMode = 'ON_OFF' | 'TRIGGER'
@@ -20,11 +21,11 @@ export interface TransformFunctionRawConfig {
     function: TransformFunction
     value?: number
     period?: number
-    offset?: number
+    xOffset?: number
+    yOffset?: number
     min?: number
     max?: number
     coefficient?: number
-    base?: number
 }
 
 export interface RawConfig {
@@ -108,42 +109,34 @@ export interface OutputConfig {
     readonly inverted: boolean
 }
 
-export interface ConstantTransformConfig {
+interface CommonTransformConfig {
+    readonly coefficient: number
+    readonly xOffset: number
+    readonly yOffset: number
+    readonly min?: number
+    readonly max?: number
+}
+
+export type ConstantTransformConfig = {
     readonly function: 'CONSTANT'
     readonly value?: number
 }
 
-export interface SinTransformConfig {
+export type SinTransformConfig = CommonTransformConfig & {
     readonly function: 'SIN'
     readonly period: number
-    readonly offset: number
-    readonly min: number
-    readonly max: number
 }
 
-export interface LinearTransformConfig {
+export type LinearTransformConfig = CommonTransformConfig & {
     readonly function: 'LINEAR'
-    readonly coefficient: number
-    readonly offset: number
-    readonly min?: number
-    readonly max?: number
 }
 
-export interface LogTransformConfig {
+export type LogTransformConfig = CommonTransformConfig & {
     readonly function: 'LOG'
-    readonly coefficient: number
-    readonly base: number
-    readonly offset: number
-    readonly min?: number
-    readonly max?: number
 }
 
-export interface ExpTransformConfig {
+export type ExpTransformConfig = CommonTransformConfig & {
     readonly function: 'EXP'
-    readonly coefficient: number
-    readonly offset: number
-    readonly min?: number
-    readonly max?: number
 }
 
 export type TransformConfig =
@@ -196,34 +189,26 @@ export function parseConfig(config: RawConfig): Config {
     const statuses: Array<string> = config.statuses.slice()
 
     const service: ServiceConfig = {
-        port:
-            config.service?.port !== undefined
-                ? config.service.port
-                : SERVICE_PORT_DEFAULT,
-        name:
-            config.service?.name !== undefined
-                ? config.service.name
-                : SERVICE_NAME_DEFAULT,
+        port: _.defaultTo(config.service?.port, SERVICE_PORT_DEFAULT),
+        name: _.defaultTo(config.service?.name, SERVICE_NAME_DEFAULT),
     }
 
-    const inputDebounceDelay =
-        config.box.inputDebounceDelay !== undefined
-            ? config.box.inputDebounceDelay
-            : INPUT_DEBOUNCE_DELAY_DEFAULT
-    const defaultBrightness =
-        config.box.defaultBrightness !== undefined
-            ? config.box.defaultBrightness
-            : 1
+    const inputDebounceDelay = _.defaultTo(
+        config.box.inputDebounceDelay,
+        INPUT_DEBOUNCE_DELAY_DEFAULT,
+    )
+    const defaultBrightness = _.defaultTo(config.box.defaultBrightness, 1)
 
     let lightSensor
     if (config.box.lightSensor) {
         let brightnessTransform: TransformConfig
         if (!config.box.lightSensor.transform) {
+            // pretty good curve, looks like this: https://www.desmos.com/calculator/8s1ulwjq4s
             brightnessTransform = {
                 function: 'LOG',
-                coefficient: 0.5,
-                base: 10,
-                offset: -0.5,
+                coefficient: 0.1,
+                xOffset: -20,
+                yOffset: -0.25,
                 min: 0.05,
                 max: config.box.defaultBrightness,
             }
@@ -232,12 +217,18 @@ export function parseConfig(config: RawConfig): Config {
                 case 'LINEAR':
                     brightnessTransform = {
                         function: 'LINEAR',
-                        coefficient:
-                            config.box.lightSensor.transform.coefficient !==
-                            undefined
-                                ? config.box.lightSensor.transform.coefficient
-                                : 1,
-                        offset: config.box.lightSensor.transform.offset || 0,
+                        coefficient: _.defaultTo(
+                            config.box.lightSensor.transform.coefficient,
+                            1,
+                        ),
+                        xOffset: _.defaultTo(
+                            config.box.lightSensor.transform.xOffset,
+                            0,
+                        ),
+                        yOffset: _.defaultTo(
+                            config.box.lightSensor.transform.yOffset,
+                            0,
+                        ),
                         min: config.box.lightSensor.transform.min,
                         max: config.box.lightSensor.transform.max,
                     }
@@ -245,16 +236,18 @@ export function parseConfig(config: RawConfig): Config {
                 case 'LOG':
                     brightnessTransform = {
                         function: 'LOG',
-                        coefficient:
-                            config.box.lightSensor.transform.coefficient !==
-                            undefined
-                                ? config.box.lightSensor.transform.coefficient
-                                : 1,
-                        base:
-                            config.box.lightSensor.transform.base !== undefined
-                                ? config.box.lightSensor.transform.base
-                                : 10,
-                        offset: config.box.lightSensor.transform.offset || 0,
+                        coefficient: _.defaultTo(
+                            config.box.lightSensor.transform.coefficient,
+                            1,
+                        ),
+                        xOffset: _.defaultTo(
+                            config.box.lightSensor.transform.xOffset,
+                            0,
+                        ),
+                        yOffset: _.defaultTo(
+                            config.box.lightSensor.transform.yOffset,
+                            0,
+                        ),
                         min: config.box.lightSensor.transform.min,
                         max: config.box.lightSensor.transform.max,
                     }
@@ -267,14 +260,8 @@ export function parseConfig(config: RawConfig): Config {
         }
         lightSensor = {
             model: config.box.lightSensor.model,
-            address:
-                config.box.lightSensor.address !== undefined
-                    ? config.box.lightSensor.address
-                    : 0x23,
-            bus:
-                config.box.lightSensor.bus !== undefined
-                    ? config.box.lightSensor.bus
-                    : 1,
+            address: _.defaultTo(config.box.lightSensor.address, 0x23),
+            bus: _.defaultTo(config.box.lightSensor.bus, 1),
             transform: brightnessTransform,
         }
     }
@@ -325,12 +312,10 @@ export function parseConfig(config: RawConfig): Config {
                 }
 
                 const mode = output.mode || OUTPUT_MODE_DEFAULT
-                const range =
-                    output.range !== undefined
-                        ? output.range
-                        : mode === 'ON_OFF'
-                        ? 1
-                        : DEFAULT_PWM_RANGE
+                const range = _.defaultTo(
+                    output.range,
+                    mode === 'ON_OFF' ? 1 : DEFAULT_PWM_RANGE,
+                )
                 if (mode === 'ON_OFF' && range !== 1)
                     throw new TypeError(
                         `Invalid range ${output.range} for binary output ${name}. If specified, range must be 1`,
@@ -390,28 +375,33 @@ export function parseConfig(config: RawConfig): Config {
                                             )
                                         }
                                         outputTransform = {
-                                            function: value.function,
+                                            function: 'CONSTANT',
                                             value: value.value,
                                         }
                                     } else if (value.function === 'SIN') {
                                         outputTransform = {
-                                            function: value.function,
-                                            period:
-                                                value.period !== undefined
-                                                    ? value.period
-                                                    : OUTPUT_FUNCTION_PERIOD_DEFAULT,
-                                            offset:
-                                                value.offset !== undefined
-                                                    ? value.offset
-                                                    : 0,
-                                            min:
-                                                value.min !== undefined
-                                                    ? value.min
-                                                    : 0,
-                                            max:
-                                                value.max !== undefined
-                                                    ? value.max
-                                                    : output.range,
+                                            function: 'SIN',
+                                            period: _.defaultTo(
+                                                value.period,
+                                                OUTPUT_FUNCTION_PERIOD_DEFAULT,
+                                            ),
+                                            coefficient: _.defaultTo(
+                                                value.coefficient,
+                                                1,
+                                            ),
+                                            xOffset: _.defaultTo(
+                                                value.xOffset,
+                                                0,
+                                            ),
+                                            yOffset: _.defaultTo(
+                                                value.yOffset,
+                                                0,
+                                            ),
+                                            min: _.defaultTo(value.min, 0),
+                                            max: _.defaultTo(
+                                                value.max,
+                                                output.range,
+                                            ),
                                         }
                                     } else {
                                         throw new TypeError(

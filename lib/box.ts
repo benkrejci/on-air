@@ -1,12 +1,19 @@
 import { CLOCK_PWM, Gpio, configureClock } from 'pigpio'
 import { Config, TransformConfig } from './config'
 
+import Bh1750 from 'bh1750_lux'
 import { EventEmitter } from 'events'
+import assert from 'assert'
 import { debounce } from './decorators'
 
 const SAMPLE_RATE = 5 // us
 const PWM_FREQUENCY = 800 // hz
-const LIGHT_SENSOR_UPDATE_PERIOD = 200 // ms
+const OUTPUT_FUNCTION_PERIOD = 1000 / 60 // 60 fps
+assert(
+    OUTPUT_FUNCTION_PERIOD > (2 * 1000) / PWM_FREQUENCY,
+    'OUTPUT_FUNCTION_PERIOD should not be less than 2 PWM pulses',
+)
+const LIGHT_SENSOR_MIN_POLL_PERIOD = 200 // ms
 const LIGHT_SENSOR_MOVING_AVERAGE_N = 10
 
 configureClock(SAMPLE_RATE, CLOCK_PWM)
@@ -16,14 +23,16 @@ export class Box extends EventEmitter {
     private readonly outputByName: Map<string, Gpio> = new Map()
     private readonly inputByName: Map<string, Gpio> = new Map()
 
-    private lightSensortInterval: NodeJS.Timeout | null = null
+    private bh1750Sensor?: Bh1750
+    private lightSensorLastReadingTime?: number
+    private lastSensorBrightness?: number
+    private lightSensorReadings: number[] = []
 
-    private outputFunctionStart: number = 0
     private outputFunctionInterval: NodeJS.Timeout | null = null
 
     private inputStatus: string
     private outputStatus: string
-    private brightness: number = 1
+    private brightnessOverride?: number
 
     public static create(config: Config): Box {
         return new Box(config)
@@ -42,43 +51,47 @@ export class Box extends EventEmitter {
         this.updateOutputStatus()
     }
 
-    private updateOutputStatus(): void {
+    private updateOutputStatus(silent = false): void {
         if (!this.config.box.outputTransformsByStatus || !this.outputStatus)
             return
 
-        const outputFunctions = this.config.box.outputTransformsByStatus.get(
+        const outputTransforms = this.config.box.outputTransformsByStatus.get(
             this.outputStatus,
         )
-        if (outputFunctions === undefined) {
+        if (outputTransforms === undefined) {
             console.warn(
                 `setOutputStatus was called with status ${this.outputStatus} which has no outputs configured`,
             )
             return
         }
-        let periodicFunctions = 0
-        outputFunctions.forEach((outputFunction, name) => {
-            if (outputFunction.function === 'CONSTANT') {
-                if (outputFunction.value === undefined)
-                    throw new TypeError(
-                        `Unexpected undefined output function value`,
-                    ) // this will never happen
-                this.setOutput(name, outputFunction.value)
-            } else {
-                periodicFunctions++
+
+        // only update once if value will be constant (no light sensor polling or periodic output functions)
+        let updateOnce = !this.config.box.lightSensor
+        if (updateOnce) {
+            for (const [status, transform] of outputTransforms) {
+                if (transform.function !== 'CONSTANT') {
+                    updateOnce = false
+                    break
+                }
             }
-        })
-        if (periodicFunctions > 0) {
-            this.startOutputFunctions()
-        } else {
+        }
+        if (updateOnce) {
+            // if outputs will not change, just update now
+            this.outputFunctionTick()
             this.stopOutputFunctions()
+        } else {
+            // otherwise, start interval to periodically update outputs
+            this.startOutputFunctions()
         }
 
-        this.log(`box output LED changed to ${
-            this.outputStatus
-        } at brightness ${this.brightness}
-    +--${'-'.repeat(this.outputStatus.length)}--+
-    |  ${this.outputStatus}  |
-    +--${'-'.repeat(this.outputStatus.length)}--+`)
+        if (!silent) {
+            this.log(`box output LED changed to ${
+                this.outputStatus
+            } at brightness ${this.brightnessOverride}
+        +--${'-'.repeat(this.outputStatus.length)}--+
+        |  ${this.outputStatus}  |
+        +--${'-'.repeat(this.outputStatus.length)}--+`)
+        }
     }
 
     private setOutput(name: string, value: number) {
@@ -90,25 +103,16 @@ export class Box extends EventEmitter {
         if (outputConfig.mode === 'ON_OFF') {
             output.digitalWrite(value)
         } else {
-            value = Math.round(this.brightness * value)
-            output.pwmWrite(value)
+            this.getBrightness().then((brightness) => {
+                value = Math.round(brightness * value)
+                output.pwmWrite(value)
+            })
         }
-    }
-
-    public setBrightness(level: number) {
-        if (level < 0 || level > 1)
-            throw new TypeError(
-                `Invalid brightness ${level}, must be between 0 and 1`,
-            )
-        this.brightness = level
-        this.updateOutputStatus()
     }
 
     // this may be async in the future so just return a promise (see service.stop)
     public stop(): Promise<void> {
         this.setOutputStatus(this.config.defaultStatus)
-        if (this.lightSensortInterval !== null)
-            clearInterval(this.lightSensortInterval)
         if (this.outputFunctionInterval !== null)
             clearInterval(this.outputFunctionInterval)
         return Promise.resolve()
@@ -119,7 +123,6 @@ export class Box extends EventEmitter {
 
         this.config = config
         this.inputStatus = this.outputStatus = this.config.defaultStatus
-        this.setBrightness(config.box.defaultBrightness)
 
         this.log(
             `starting Box hardware controller with ${
@@ -175,40 +178,75 @@ export class Box extends EventEmitter {
 
         const lightSensor = this.config.box.lightSensor
         if (lightSensor.model === 'ADAFRUIT_BH1750') {
-            const Bh1750 = require('bh1750_lux')
-            const sensor = new Bh1750({
+            this.bh1750Sensor = new Bh1750({
                 addr: lightSensor.address,
                 bus: lightSensor.bus,
                 read: 'continuous',
             })
-
-            const luxReadings: number[] = []
-
-            this.lightSensortInterval = setInterval(() => {
-                sensor.readLight().then((lux: number) => {
-                    luxReadings.push(lux)
-                    if (luxReadings.length < LIGHT_SENSOR_MOVING_AVERAGE_N)
-                        return
-                    else if (luxReadings.length > LIGHT_SENSOR_MOVING_AVERAGE_N)
-                        luxReadings.shift()
-                    const movingAverage =
-                        luxReadings.reduce((prev, cur) => prev + cur) /
-                        luxReadings.length
-                    this.setBrightness(
-                        Math.min(
-                            1,
-                            Math.max(
-                                0,
-                                this.transform(
-                                    lightSensor.transform,
-                                    movingAverage,
-                                ),
-                            ),
-                        ),
-                    )
-                })
-            }, LIGHT_SENSOR_UPDATE_PERIOD)
         }
+    }
+
+    public setBrightness(level: number, silent = false) {
+        if (level < 0 || level > 1)
+            throw new TypeError(
+                `Invalid brightness ${level}, must be between 0 and 1`,
+            )
+        this.brightnessOverride = level
+        this.updateOutputStatus(silent)
+    }
+
+    private getBrightness(): Promise<number> {
+        if (this.brightnessOverride !== undefined)
+            return Promise.resolve(this.brightnessOverride)
+
+        const lightSensorConfig = this.config.box.lightSensor
+        if (!this.bh1750Sensor || !lightSensorConfig)
+            return Promise.resolve(this.config.box.defaultBrightness)
+
+        const time = +new Date()
+        if (
+            this.lightSensorLastReadingTime &&
+            this.lastSensorBrightness &&
+            time - this.lightSensorLastReadingTime <
+                LIGHT_SENSOR_MIN_POLL_PERIOD
+        ) {
+            return Promise.resolve(this.lastSensorBrightness)
+        }
+
+        this.lightSensorLastReadingTime = time
+
+        return this.getLux()
+            .then((lux: number) => {
+                return this.transform(lightSensorConfig.transform, lux)
+            })
+            .then((brightness) => {
+                this.lastSensorBrightness = brightness
+                return brightness
+            })
+    }
+
+    private getLux(): Promise<number> {
+        if (!this.bh1750Sensor)
+            return Promise.reject(
+                new Error(`getLux called with no sensor initialized`),
+            )
+
+        return this.bh1750Sensor.readLight().then((lux: number) => {
+            this.lightSensorReadings.push(lux)
+            if (
+                this.lightSensorReadings.length < LIGHT_SENSOR_MOVING_AVERAGE_N
+            ) {
+                return this.config.box.defaultBrightness
+            } else if (
+                this.lightSensorReadings.length > LIGHT_SENSOR_MOVING_AVERAGE_N
+            ) {
+                this.lightSensorReadings.shift()
+            }
+            return (
+                this.lightSensorReadings.reduce((prev, cur) => prev + cur) /
+                this.lightSensorReadings.length
+            )
+        })
     }
 
     @debounce()
@@ -250,10 +288,9 @@ export class Box extends EventEmitter {
     }
 
     private startOutputFunctions() {
-        this.outputFunctionStart = +new Date()
         this.outputFunctionInterval = setInterval(
             this.outputFunctionTick.bind(this),
-            1000 / PWM_FREQUENCY / 2, // should not try to update PWM more than half as often as the pulses
+            OUTPUT_FUNCTION_PERIOD,
         )
     }
 
@@ -263,7 +300,7 @@ export class Box extends EventEmitter {
         )
         if (!outputFunctions) return
 
-        const t = +new Date() - this.outputFunctionStart
+        const t = +new Date()
 
         outputFunctions.forEach((functionConfig, name) => {
             const outputConfig = this.config.box.outputsByName?.get(name)
@@ -277,28 +314,38 @@ export class Box extends EventEmitter {
     private transform(transform: TransformConfig, x: number): number {
         let ret: number
         switch (transform.function) {
+            case 'CONSTANT':
+                if (transform.value === undefined)
+                    throw new TypeError(
+                        `Unexpected undefined output function value`,
+                    ) // this will never happen
+                return transform.value
+
             case 'SIN':
-                return (
-                    ((transform.max - transform.min) *
-                        (Math.sin(
-                            ((x + transform.offset) / transform.period) *
-                                2 *
-                                Math.PI,
-                        ) +
-                            1)) /
-                        2 +
-                    transform.min
+                let y = Math.sin(
+                    ((x - transform.xOffset) * 2 * Math.PI) / transform.period,
                 )
+                if (
+                    transform.max !== undefined &&
+                    transform.min !== undefined
+                ) {
+                    y =
+                        (y / 2 + 0.5) * (transform.max - transform.min) +
+                        transform.min
+                }
+                y += transform.yOffset
+                return y
 
             case 'LINEAR':
-                ret = x * transform.coefficient + transform.offset
+                ret =
+                    (x - transform.xOffset) * transform.coefficient +
+                    transform.yOffset
                 break
 
             case 'LOG':
                 ret =
-                    (transform.coefficient * Math.log(x)) /
-                        Math.log(transform.base) +
-                    transform.offset
+                    transform.coefficient * Math.log(x - transform.xOffset) +
+                    transform.yOffset
                 break
 
             default:

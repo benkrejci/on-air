@@ -1,4 +1,3 @@
-import * as os from 'os'
 import Bonjour from 'bonjour'
 import { EventEmitter } from 'events'
 import express from 'express'
@@ -62,7 +61,7 @@ export class Service extends EventEmitter {
         // notify all other services of the status change
         await Promise.all(
             this.allServices.map(async (service) => {
-                await this.updateRemoteService(service)
+                await this.syncRemoteService(service)
             }),
         )
     }
@@ -83,25 +82,31 @@ export class Service extends EventEmitter {
             config.statuses.map((status, index) => [status, index]),
         )
 
-        // install API server
-        this.express.put(`/${API_PATH}/status`, (request, response) => {
-            const {
-                fqdn,
-                status,
-            }: { fqdn: string; status: string } = request.body
-            if (!this.config.statuses.includes(status)) {
-                this.error(
-                    `remote service ${fqdn} tried to set status ${status} which is unrecognized by this service! Ensure all services on the network are using the same config`,
-                )
-                response.json({ success: false })
-            } else {
-                const oldStatus = this.statusByFqdn[fqdn]
-                this.log(
-                    `remote service ${fqdn} status changed from ${oldStatus} to ${status}`,
-                )
-                this.setServiceStatus(fqdn, status)
-                response.json({ success: true })
+        // initialize API server
+        this.express.use(`/${API_PATH}/status`, (request, response) => {
+            const responseBody: { success?: boolean; status: string } = {
+                status: this.statusByFqdn[this.service.fqdn],
             }
+            if (request.method === 'PUT') {
+                const {
+                    fqdn,
+                    status,
+                }: { fqdn: string; status: string } = request.body
+                if (!this.config.statuses.includes(status)) {
+                    this.error(
+                        `remote service ${fqdn} tried to set status ${status} which is unrecognized by this service! Ensure all services on the network are using the same config`,
+                    )
+                    response.json({ success: false })
+                } else {
+                    const oldStatus = this.statusByFqdn[fqdn]
+                    this.log(
+                        `remote service ${fqdn} status changed from ${oldStatus} to ${status}`,
+                    )
+                    this.setServiceStatus(fqdn, status)
+                    responseBody.success = true
+                }
+            }
+            response.json(responseBody)
         })
         this.httpServer = this.express.listen(config.service.port, () => {
             this.log(
@@ -133,7 +138,7 @@ export class Service extends EventEmitter {
                 // add it to our list of services
                 this.allServices.push(service)
                 // and give it our current input status
-                this.updateRemoteService(service)
+                this.syncRemoteService(service)
             },
         )
         // when service dies
@@ -160,7 +165,7 @@ export class Service extends EventEmitter {
         this.setInputStatus(this.config.defaultStatus)
     }
 
-    private async updateRemoteService(service: Bonjour.Service): Promise<void> {
+    private async syncRemoteService(service: Bonjour.Service): Promise<void> {
         const ip = service.addresses.find((a: string) => isIPv4(a))
         const url = `http://${ip}:${service.port}/${API_PATH}/status`
         const ourStatus = this.statusByFqdn[this.service.fqdn]
@@ -171,8 +176,11 @@ export class Service extends EventEmitter {
             })
             if (response.status !== 200 || !response.data?.success)
                 throw new Error(
-                    `bad response [${response.status}]: ${response.data}`,
+                    `bad response [${response.status}]: ${JSON.stringify(
+                        response.data,
+                    )}`,
                 )
+            this.setServiceStatus(service.fqdn, response.data.status)
         } catch (error) {
             // we'll consider this a recoverable error for now
             this.warn(`error updating status on ${url}: ${error.message}`)

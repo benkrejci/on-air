@@ -19,12 +19,12 @@ box:
     lightSensor:
         model: 'ADAFRUIT_BH1750'
     #        transform:
-    #            function: LOG
-    #            base: 10
-    #            coefficient: 0.5
-    #            offset: -0.5
-    #            min: 0.05
-    #            max: 0.6
+    #            function: 'LOG',
+    #            coefficient: 0.1,
+    #            xOffset: -20,
+    #            yOffset: -0.25,
+    #            min: 0.05,
+    #            max: {defaultBrightness},
 
     ## I chose these pins from pins that are not reserved for alternate
     ## functions. This is where they are on the board:
@@ -112,10 +112,10 @@ box:
             red:
                 function: SIN
                 period: 4000
-                offset: 0
-                min: 0
+                min: 50
                 max: 255
             green:
                 function: SIN
                 period: 3700
-                offset: 0
+                min: 50
+                max: 255
