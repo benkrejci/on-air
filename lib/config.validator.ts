@@ -39,16 +39,13 @@ export const RawConfigSchema = {
         "min": {
           "type": "number"
         },
+        "offset": {
+          "type": "number"
+        },
         "period": {
           "type": "number"
         },
         "value": {
-          "type": "number"
-        },
-        "xOffset": {
-          "type": "number"
-        },
-        "yOffset": {
           "type": "number"
         }
       },

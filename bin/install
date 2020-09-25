@@ -15,7 +15,7 @@ if [ -f "$BOX_CONFIG" ]; then
   echo "Skipping copy default config.yml because $BOX_CONFIG already exists."
 else
   echo "Copying default box-config.yml..."
-  cp "$REPO/config/config.default.yml" "$BOX_CONFIG"
+  cp "$REPO/config/config.example.yml" "$BOX_CONFIG"
 fi
 
 echo "Installing and starting systemd service..."

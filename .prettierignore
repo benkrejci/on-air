@@ -1,0 +1,5 @@
+# ignore artifacts
+dist
+
+# messes up comments in yaml, so ignore config
+config/*.yml

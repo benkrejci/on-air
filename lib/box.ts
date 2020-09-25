@@ -322,9 +322,7 @@ export class Box extends EventEmitter {
                 return transform.value
 
             case 'SIN':
-                let y = Math.sin(
-                    ((x - transform.xOffset) * 2 * Math.PI) / transform.period,
-                )
+                let y = Math.sin((x * 2 * Math.PI) / transform.period)
                 if (
                     transform.max !== undefined &&
                     transform.min !== undefined
@@ -333,19 +331,15 @@ export class Box extends EventEmitter {
                         (y / 2 + 0.5) * (transform.max - transform.min) +
                         transform.min
                 }
-                y += transform.yOffset
+                y += transform.offset
                 return y
 
             case 'LINEAR':
-                ret =
-                    (x - transform.xOffset) * transform.coefficient +
-                    transform.yOffset
+                ret = x * transform.coefficient + transform.offset
                 break
 
             case 'LOG':
-                ret =
-                    transform.coefficient * Math.log(x - transform.xOffset) +
-                    transform.yOffset
+                ret = transform.coefficient * Math.log(x) + transform.offset
                 break
 
             default:

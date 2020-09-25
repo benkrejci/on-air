@@ -16,13 +16,13 @@ const INPUT_ACTION_DEFAULT: InputAction = 'STATUS'
 const INPUT_PULL_DEFAULT: InputPull = 'DOWN'
 const OUTPUT_MODE_DEFAULT: OutputMode = 'ON_OFF'
 const OUTPUT_FUNCTION_PERIOD_DEFAULT: number = 2000 // ms
+const BRIGHTNESS_DEFAULT = 0.6 // 0 - 1
 
 export interface TransformFunctionRawConfig {
     function: TransformFunction
     value?: number
     period?: number
-    xOffset?: number
-    yOffset?: number
+    offset?: number
     min?: number
     max?: number
     coefficient?: number
@@ -111,8 +111,7 @@ export interface OutputConfig {
 
 interface CommonTransformConfig {
     readonly coefficient: number
-    readonly xOffset: number
-    readonly yOffset: number
+    readonly offset: number
     readonly min?: number
     readonly max?: number
 }
@@ -197,18 +196,21 @@ export function parseConfig(config: RawConfig): Config {
         config.box.inputDebounceDelay,
         INPUT_DEBOUNCE_DELAY_DEFAULT,
     )
-    const defaultBrightness = _.defaultTo(config.box.defaultBrightness, 1)
+    const defaultBrightness = _.defaultTo(
+        config.box.defaultBrightness,
+        BRIGHTNESS_DEFAULT,
+    )
 
     let lightSensor
     if (config.box.lightSensor) {
         let brightnessTransform: TransformConfig
         if (!config.box.lightSensor.transform) {
-            // pretty good curve, looks like this: https://www.desmos.com/calculator/8s1ulwjq4s
+            // pretty good curve, looks like this: https://www.desmos.com/calculator/oqgxlgud8o
+            // calculated here: https://keisan.casio.com/exec/system/14059930226691
             brightnessTransform = {
                 function: 'LOG',
-                coefficient: 0.1,
-                xOffset: -20,
-                yOffset: -0.25,
+                coefficient: 0.13,
+                offset: -0.0967,
                 min: 0.05,
                 max: config.box.defaultBrightness,
             }
@@ -221,12 +223,8 @@ export function parseConfig(config: RawConfig): Config {
                             config.box.lightSensor.transform.coefficient,
                             1,
                         ),
-                        xOffset: _.defaultTo(
-                            config.box.lightSensor.transform.xOffset,
-                            0,
-                        ),
-                        yOffset: _.defaultTo(
-                            config.box.lightSensor.transform.yOffset,
+                        offset: _.defaultTo(
+                            config.box.lightSensor.transform.offset,
                             0,
                         ),
                         min: config.box.lightSensor.transform.min,
@@ -240,12 +238,8 @@ export function parseConfig(config: RawConfig): Config {
                             config.box.lightSensor.transform.coefficient,
                             1,
                         ),
-                        xOffset: _.defaultTo(
-                            config.box.lightSensor.transform.xOffset,
-                            0,
-                        ),
-                        yOffset: _.defaultTo(
-                            config.box.lightSensor.transform.yOffset,
+                        offset: _.defaultTo(
+                            config.box.lightSensor.transform.offset,
                             0,
                         ),
                         min: config.box.lightSensor.transform.min,
@@ -389,12 +383,8 @@ export function parseConfig(config: RawConfig): Config {
                                                 value.coefficient,
                                                 1,
                                             ),
-                                            xOffset: _.defaultTo(
-                                                value.xOffset,
-                                                0,
-                                            ),
-                                            yOffset: _.defaultTo(
-                                                value.yOffset,
+                                            offset: _.defaultTo(
+                                                value.offset,
                                                 0,
                                             ),
                                             min: _.defaultTo(value.min, 0),
