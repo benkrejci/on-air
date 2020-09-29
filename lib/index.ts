@@ -43,7 +43,7 @@ process.on('SIGTERM', async () => {
 })
 
 process.on('SIGINT', async () => {
-    process.stdout.write('SIGTERM signal received\n')
+    process.stdout.write('SIGINT signal received\n')
     await cleanUp(true)
 })
 

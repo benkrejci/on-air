@@ -24,7 +24,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": "git@github.com:benkrejci/on-air.git",
-  "author": "krejcib <krejcib@audible.com>",
+  "author": "benkrejci",
   "license": "MIT",
   "devDependencies": {
     "@types/bonjour": "^3.5.6",
