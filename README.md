@@ -75,19 +75,25 @@ This is best build I currently have. I use darlington transistors to switch the 
 -   3x voltage regulator (LM317T) [25 for \$8 on Amazon](https://www.amazon.com/gp/product/B07VNNHWF9)
 -   _Optional_ heatsink for at least the red LM317 [12 for \$6 on Amazon](https://www.amazon.com/Insulator-Rubberized-Regulator-Transistor-20mmx15mmx11mm/dp/B07PGVZ7CJ)
 -   Resistors (1/4W)
-    -   3x 1kΩ (1 for each color)
-    -   5x 20Ω (for red)
-    -   4x 15Ω (2 for each of green and blue)
+    -   For 3W LED regulators:
+        -   3x 1kΩ (1 for each color)
+        -   5x 20Ω (for red)
+        -   4x 15Ω (2 for each of green and blue)
+    -   (Optional) for secondary "local status" LED:
+        -   1x 80Ω red
+        -   1x 120Ω green
+        -   1x 50Ω blue
 -   Buck converter (for powering Pi from 9v source) [6 for \$10 on Amazon](https://www.amazon.com/gp/product/B076H3XHXP)
 -   Switch/buttons
     -   I ended up going with momentary push buttons [like these colorful chonks for \$6 on Adafruit](https://www.adafruit.com/product/1009)
     -   But originally when I only had 2 statuses, I used an ON-OFF-ON rocker switch [I like this thicc boy (2 for \$13) but there are cheaper options](https://www.amazon.com/gp/product/B07PDQN6P8)
 -   Optional light sensor to automatically adjust brightness: [\$4.50 on Adafruit](https://www.adafruit.com/product/4681)
+-   Optional secondary "local status" RGB LED: [10 for \$7 on Amazon](https://www.amazon.com/gp/product/B0194Y6MW2)
 -   Some barrel jacks [5 for \$8 on Amazon](https://www.amazon.com/gp/product/B07C46XMPT)
 -   7.5-9V 1A DC power supply (any higher than 9V and you'll be dumping a lot of power into the LM317s as heat) [I used this 8.5V one \$8 on Amazon](https://www.amazon.com/gp/product/B08CH9C3K6)
 -   Some kind of enclosure, I cut up this wooden box [\$14 on Amazon](https://www.amazon.com/gp/product/B004I9SLEG)
 
-Total for the fully tricked out setup is ~\$100 for 2 boxes and you'll have spare parts.
+Total for the fully loaded out setup is ~\$100 for 2 boxes and you'll have spare parts.
 
 You can either print the PCB below (~\$15 for 5 boards with shipping; arrives in about a week from China) or use some blank prototyping boards.
 
@@ -128,6 +134,16 @@ So for the red circuit in my example `1.25V * 0.313A = 0.392W` is the power diss
 **Finally, let's figure out the heat that will be dissipated by the LM317. To do this, we calculate the voltage drop across it and multiply it by the current `(Vin - Vled - Vref) * I = Pu` where Vin is input voltage, Vled is voltage drop across LED, and Vref is the LM317 reference voltage of 1.25V.**
 
 For my red LED `8.5V - 2.5V - 1.25V = 4.75V`. This is more than the minimum 3V the LM317 needs to operate, but will dissipate `4.75V * 0.313A = 1.49W` of heat. If you are putting [more than 0.25W into an LM317, you need a heatsink](http://www.reuk.co.uk/wordpress/electric-circuit/lm317t-heatsinking/).
+
+**"My status" RGB LED**
+
+For this smaller RGB LED I use traditional resistor current limiting since the power dissipation is so much lower.
+
+Red resistor: `3.3V - 1.7V = 1.6V / 0.02A = ~80Ω`
+
+Green resistor: `3.3V - 2.7V = 0.6V / 0.005A = ~120Ω`
+
+Blue resistor: `3.3V - 3.0V = 0.3V / 0.006A = ~50Ω`
 
 ### Notes
 

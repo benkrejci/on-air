@@ -1,5 +1,5 @@
 import { CLOCK_PWM, Gpio, configureClock } from 'pigpio'
-import { Config, TransformConfig } from './config'
+import { Config, OutputConfig, TransformConfig } from './config'
 
 import Bh1750 from 'bh1750_lux'
 import { EventEmitter } from 'events'
@@ -20,8 +20,9 @@ configureClock(SAMPLE_RATE, CLOCK_PWM)
 
 export class Box extends EventEmitter {
     private readonly config: Config
-    private readonly outputByName: Map<string, Gpio> = new Map()
-    private readonly inputByName: Map<string, Gpio> = new Map()
+    private readonly globalStatusOutputsByName: Map<string, Gpio> = new Map()
+    private readonly localStatusOutputsByName: Map<string, Gpio> = new Map()
+    private readonly inputsByName: Map<string, Gpio> = new Map()
 
     private bh1750Sensor?: Bh1750
     private lightSensorLastReadingTime?: number
@@ -36,6 +37,14 @@ export class Box extends EventEmitter {
 
     public static create(config: Config): Box {
         return new Box(config)
+    }
+
+    // this may be async in the future so just return a promise (see service.stop)
+    public stop(): Promise<void> {
+        this.stopOutputFunctions()
+        this.setOutputStatus(this.config.defaultStatus)
+        this.outputFunctionTick()
+        return Promise.resolve()
     }
 
     public getInputStatus() {
@@ -65,25 +74,6 @@ export class Box extends EventEmitter {
             return
         }
 
-        // only update once if value will be constant (no light sensor polling or periodic output functions)
-        let updateOnce = !this.config.box.lightSensor
-        if (updateOnce) {
-            for (const [status, transform] of outputTransforms) {
-                if (transform.function !== 'CONSTANT') {
-                    updateOnce = false
-                    break
-                }
-            }
-        }
-        if (updateOnce) {
-            // if outputs will not change, just update now
-            this.outputFunctionTick()
-            this.stopOutputFunctions()
-        } else {
-            // otherwise, start interval to periodically update outputs
-            this.startOutputFunctions()
-        }
-
         if (!silent) {
             this.log(`box output LED changed to ${
                 this.outputStatus
@@ -94,28 +84,25 @@ export class Box extends EventEmitter {
         }
     }
 
-    private setOutput(name: string, value: number) {
-        const outputConfig = this.config.box.outputsByName?.get(name)
-        const output = this.outputByName.get(name)
-        if (outputConfig === undefined || output === undefined) return // this case is already handled by parseConfig()
+    private setGlobalStatusOutput(name: string, value: number) {
+        this.setStatusOutput(this.config.box.globalStatusOutputsByName?.get(name), this.globalStatusOutputsByName?.get(name), value, false)
+    }
 
-        if (outputConfig.inverted) value = outputConfig.range - value
+    private setLocalStatusOutput(name: string, value: number) {
+        this.setStatusOutput(this.config.box.localStatusOutputsByName?.get(name), this.localStatusOutputsByName?.get(name), value, true)
+    }
+
+    private setStatusOutput(outputConfig: OutputConfig | undefined, output: Gpio | undefined, value: number, log: boolean) {
+        if (outputConfig === undefined || output === undefined) return // this case is already handled by parseConfig()
         if (outputConfig.mode === 'ON_OFF') {
-            output.digitalWrite(value)
+            output.digitalWrite(outputConfig.inverted ? 1 - value : value)
         } else {
             this.getBrightness().then((brightness) => {
                 value = Math.round(brightness * value)
+                if (outputConfig.inverted) value = outputConfig.range - value
                 output.pwmWrite(value)
             })
         }
-    }
-
-    // this may be async in the future so just return a promise (see service.stop)
-    public stop(): Promise<void> {
-        this.setOutputStatus(this.config.defaultStatus)
-        if (this.outputFunctionInterval !== null)
-            clearInterval(this.outputFunctionInterval)
-        return Promise.resolve()
     }
 
     private constructor(config: Config) {
@@ -127,12 +114,13 @@ export class Box extends EventEmitter {
         this.log(
             `starting Box hardware controller with ${
                 config.box.inputsByName?.size || 0
-            } input and ${config.box.outputsByName?.size || 0} outputs`,
+            } input and ${config.box.globalStatusOutputsByName?.size || 0} outputs`,
         )
 
         this.initOutput()
         this.initInput()
         this.initSensor()
+        this.startOutputFunctions()
     }
 
     private initInput(): void {
@@ -154,22 +142,28 @@ export class Box extends EventEmitter {
                 this.setInputValue(name, input.digitalRead())
             })
 
-            this.inputByName.set(name, input)
+            this.inputsByName.set(name, input)
         })
     }
 
     private initOutput(): void {
-        this.config.box.outputsByName?.forEach((outputConfig, name) => {
-            const output = new Gpio(outputConfig.pin, {
-                mode: Gpio.OUTPUT,
+        [this.config.box.globalStatusOutputsByName, this.config.box.localStatusOutputsByName].forEach(outputMap => {
+            outputMap?.forEach((outputConfig, name) => {
+                const output = new Gpio(outputConfig.pin, {
+                    mode: Gpio.OUTPUT,
+                })
+
+                if (outputConfig.mode === 'PWM') {
+                    output.pwmRange(outputConfig.range)
+                    output.pwmFrequency(PWM_FREQUENCY)
+                }
+
+                if (outputMap === this.config.box.globalStatusOutputsByName) {
+                    this.globalStatusOutputsByName.set(name, output)
+                } else {
+                    this.localStatusOutputsByName.set(name, output)
+                }
             })
-
-            if (outputConfig.mode === 'PWM') {
-                output.pwmRange(outputConfig.range)
-                output.pwmFrequency(PWM_FREQUENCY)
-            }
-
-            this.outputByName.set(name, output)
         })
     }
 
@@ -295,20 +289,30 @@ export class Box extends EventEmitter {
     }
 
     private outputFunctionTick() {
-        const outputFunctions = this.config.box.outputTransformsByStatus?.get(
+        const globalOutputFunctions = this.config.box.outputTransformsByStatus?.get(
             this.outputStatus,
         )
-        if (!outputFunctions) return
+        if (!globalOutputFunctions) return
 
+        const localOutputEnabled = !!this.config.box.localStatusOutputsByName
+        const localOutputFunctions = this.config.box.outputTransformsByStatus?.get(this.inputStatus)
         const t = +new Date()
 
-        outputFunctions.forEach((functionConfig, name) => {
-            const outputConfig = this.config.box.outputsByName?.get(name)
-            const output = this.outputByName.get(name)
-            if (outputConfig === undefined || output === undefined) return // this case is already handled by parseConfig()
-
-            this.setOutput(name, this.transform(functionConfig, t))
+        globalOutputFunctions?.forEach((functionConfig, name) => {
+            const outputValue = this.transform(functionConfig, t)
+            this.setGlobalStatusOutput(name, outputValue)
+            // if input and output status are the same, no need to recalculate below
+            if (localOutputEnabled && this.inputStatus === this.outputStatus) {
+                this.setLocalStatusOutput(name, outputValue)
+            }
         })
+
+        if (localOutputEnabled && this.inputStatus !== this.outputStatus) {
+            localOutputFunctions?.forEach((functionConfig, name) => {
+                const outputValue = this.transform(functionConfig, t)
+                this.setLocalStatusOutput(name, outputValue)
+            })
+        }
     }
 
     private transform(transform: TransformConfig, x: number): number {

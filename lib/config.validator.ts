@@ -63,6 +63,44 @@ export const RawConfigSchema = {
         "defaultBrightness": {
           "type": "number"
         },
+        "globalStatusOutputsByName": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "defaultProperties": [
+                ],
+                "properties": {
+                  "inverted": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "enum": [
+                      "ON_OFF",
+                      "PWM"
+                    ],
+                    "type": "string"
+                  },
+                  "pin": {
+                    "type": "number"
+                  },
+                  "range": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "pin"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "defaultProperties": [
+          ],
+          "type": "object"
+        },
         "inputDebounceDelay": {
           "type": "number"
         },
@@ -147,7 +185,7 @@ export const RawConfigSchema = {
           ],
           "type": "object"
         },
-        "outputsByName": {
+        "localStatusOutputsByName": {
           "additionalProperties": {
             "anyOf": [
               {
@@ -224,6 +262,9 @@ export const RawConfigSchema = {
       },
       "type": "object"
     },
+    "showLocalStatusOnGlobalOutput": {
+      "type": "boolean"
+    },
     "statuses": {
       "items": {
         "type": "string"
@@ -234,6 +275,7 @@ export const RawConfigSchema = {
   "required": [
     "box",
     "defaultStatus",
+    "showLocalStatusOnGlobalOutput",
     "statuses"
   ],
   "type": "object"

@@ -27,15 +27,15 @@ export class Service extends EventEmitter {
     private readonly statusIndicesByStatus: Map<string, number>
     private readonly express = express().use(
         express.json(),
-        express.urlencoded({ extended: true }),
+        express.urlencoded({ extended: true })
     )
     private readonly httpServer: Server
     // all discovered services (including this one)
-    private readonly allServices: Bonjour.Service[] = []
+    private readonly allServices: Bonjour.RemoteService[] = []
     // this service
     private readonly service: Bonjour.Service
     private readonly browser: Bonjour.Browser
-    private readonly statusByFqdn: { [key: string]: string } = {}
+    private readonly statusByFqdn: Map<string, string> = new Map()
 
     // what we should be showing locally (highest status of all services)
     private outputStatus: string
@@ -47,12 +47,12 @@ export class Service extends EventEmitter {
     public async setInputStatus(inputStatus: string): Promise<void> {
         if (!this.service)
             throw new Error(
-                `Can't set status before bonjour service has been initialized`,
+                `Can't set status before bonjour service has been initialized`
             )
 
         if (!this.config.statuses.includes(inputStatus))
             throw new Error(
-                `setInputStatus called with status ${inputStatus} which is unrecognized by this service! This should never happen...`,
+                `setInputStatus called with status ${inputStatus} which is unrecognized by this service! This should never happen...`
             )
 
         // update our status in status map and update our output
@@ -62,7 +62,7 @@ export class Service extends EventEmitter {
         await Promise.all(
             this.allServices.map(async (service) => {
                 await this.syncRemoteService(service)
-            }),
+            })
         )
     }
 
@@ -79,13 +79,13 @@ export class Service extends EventEmitter {
         this.config = config
         this.outputStatus = config.defaultStatus
         this.statusIndicesByStatus = new Map(
-            config.statuses.map((status, index) => [status, index]),
+            config.statuses.map((status, index) => [status, index])
         )
 
         // initialize API server
         this.express.use(`/${API_PATH}/status`, (request, response) => {
             const responseBody: { success?: boolean; status: string } = {
-                status: this.statusByFqdn[this.service.fqdn],
+                status: <string>this.statusByFqdn.get(this.service.fqdn),
             }
             if (request.method === 'PUT') {
                 const {
@@ -94,13 +94,13 @@ export class Service extends EventEmitter {
                 }: { fqdn: string; status: string } = request.body
                 if (!this.config.statuses.includes(status)) {
                     this.error(
-                        `remote service ${fqdn} tried to set status ${status} which is unrecognized by this service! Ensure all services on the network are using the same config`,
+                        `remote service ${fqdn} tried to set status ${status} which is unrecognized by this service! Ensure all services on the network are using the same config`
                     )
                     response.json({ success: false })
                 } else {
-                    const oldStatus = this.statusByFqdn[fqdn]
+                    const oldStatus = this.statusByFqdn.get(fqdn)
                     this.log(
-                        `remote service ${fqdn} status changed from ${oldStatus} to ${status}`,
+                        `remote service ${fqdn} status changed from ${oldStatus} to ${status}`
                     )
                     this.setServiceStatus(fqdn, status)
                     responseBody.success = true
@@ -110,7 +110,7 @@ export class Service extends EventEmitter {
         })
         this.httpServer = this.express.listen(config.service.port, () => {
             this.log(
-                `http api server started at localhost:${config.service.port}`,
+                `http api server started at localhost:${config.service.port}`
             )
         })
 
@@ -119,7 +119,7 @@ export class Service extends EventEmitter {
             {
                 type: SERVICE_TYPE,
             },
-            (service: Bonjour.Service) => {
+            (service: Bonjour.RemoteService) => {
                 // when new service comes online; this callback is equivalent to browser.on('up', func)
                 // don't count this service
                 if (service.name === config.service.name) return
@@ -139,16 +139,16 @@ export class Service extends EventEmitter {
                 this.allServices.push(service)
                 // and give it our current input status
                 this.syncRemoteService(service)
-            },
+            }
         )
         // when service dies
-        this.browser.on('down', (service: Bonjour.Service) => {
+        this.browser.on('down', (service: Bonjour.RemoteService) => {
             const serviceIndex = this.allServices.indexOf(service)
             if (serviceIndex < 0) return
             // remove it from our list
             this.allServices.splice(serviceIndex, 1)
             // remove service status and recalculate output status
-            delete this.statusByFqdn[service.fqdn]
+            this.statusByFqdn.delete(service.fqdn)
             this.computeOutputStatus()
             this.log(`friend box went offline 😔 [${service.fqdn}]`)
         })
@@ -165,10 +165,12 @@ export class Service extends EventEmitter {
         this.setInputStatus(this.config.defaultStatus)
     }
 
-    private async syncRemoteService(service: Bonjour.Service): Promise<void> {
+    private async syncRemoteService(
+        service: Bonjour.RemoteService
+    ): Promise<void> {
         const ip = service.addresses.find((a: string) => isIPv4(a))
         const url = `http://${ip}:${service.port}/${API_PATH}/status`
-        const ourStatus = this.statusByFqdn[this.service.fqdn]
+        const ourStatus = this.statusByFqdn.get(this.service.fqdn)
         try {
             const response = await axios.put(url, {
                 fqdn: this.service.fqdn,
@@ -177,8 +179,8 @@ export class Service extends EventEmitter {
             if (response.status !== 200 || !response.data?.success)
                 throw new Error(
                     `bad response [${response.status}]: ${JSON.stringify(
-                        response.data,
-                    )}`,
+                        response.data
+                    )}`
                 )
             this.setServiceStatus(service.fqdn, response.data.status)
         } catch (error) {
@@ -187,13 +189,13 @@ export class Service extends EventEmitter {
             this.debug('status update error:', error)
         }
         this.log(
-            `notified remote service ${service.fqdn} of our status: ${ourStatus}`,
+            `notified remote service ${service.fqdn} of our status: ${ourStatus}`
         )
     }
 
     private setServiceStatus(fqdn: string, status: string): void {
         // set status in the status map
-        this.statusByFqdn[fqdn] = status
+        this.statusByFqdn.set(fqdn, status)
         // update output status that we should be showing
         this.computeOutputStatus()
     }
@@ -207,7 +209,13 @@ export class Service extends EventEmitter {
             this.statusIndicesByStatus.get(newStatus)
         )
         // loop through all input statuses being reported by services and find the highest one
-        for (let status of Object.values(this.statusByFqdn)) {
+        for (let [fqdn, status] of this.statusByFqdn) {
+            // if we don't want to include local status in output status and this is the local service, skip it
+            if (
+                !this.config.showLocalStatusOnGlobalOutput &&
+                fqdn === this.service.fqdn
+            )
+                continue
             const statusIndex = <number>this.statusIndicesByStatus.get(status)
             if (statusIndex >= newStatusIndex) {
                 newStatus = status
@@ -219,7 +227,7 @@ export class Service extends EventEmitter {
         if (this.outputStatus === newStatus) return
 
         this.log(
-            `aggregate output status changed from ${this.outputStatus} to ${newStatus}`,
+            `aggregate output status changed from ${this.outputStatus} to ${newStatus}`
         )
         this.outputStatus = newStatus
         this.emit('outputStatus.update', this.outputStatus)

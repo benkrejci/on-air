@@ -16,7 +16,7 @@
     "dev": "nodemon --watch 'lib/**/*.ts' --exec 'ts-node' lib/index.ts",
     "build": "yarn run build-config-validator && yarn run tsc",
     "build-config-validator": "yarn run typescript-json-validator --useNamedExport lib/config.ts RawConfig",
-    "prepublish": "yarn run build",
+    "prepare": "yarn run build",
     "start": "node dist/index.js"
   },
   "name": "on-air",
