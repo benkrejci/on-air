@@ -1,4 +1,18 @@
 {
+  "name": "@benkrejci/on-air",
+  "version": "1.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": "git@github.com:benkrejci/on-air.git",
+  "author": "benkrejci",
+  "license": "MIT",
+  "scripts": {
+    "dev": "nodemon --watch 'lib/**/*.ts' --exec 'ts-node' lib/index.ts",
+    "build": "yarn run build-config-validator && yarn run tsc",
+    "build-config-validator": "yarn run typescript-json-validator --useNamedExport lib/config.ts RawConfig",
+    "prepare": "yarn run build",
+    "start": "node dist/index.js"
+  },
   "dependencies": {
     "axios": "^0.20.0",
     "bh1750_lux": "^1.0.1",
@@ -11,20 +25,6 @@
     "typescript-json-validator": "^2.4.2",
     "yaml": "^1.10.0"
   },
-  "scripts": {
-    "dev": "nodemon --watch 'lib/**/*.ts' --exec 'ts-node' lib/index.ts",
-    "build": "yarn run build-config-validator && yarn run tsc",
-    "build-config-validator": "yarn run typescript-json-validator --useNamedExport lib/config.ts RawConfig",
-    "prepare": "yarn run build",
-    "start": "node dist/index.js"
-  },
-  "name": "on-air",
-  "version": "1.0.0",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "repository": "git@github.com:benkrejci/on-air.git",
-  "author": "benkrejci",
-  "license": "MIT",
   "devDependencies": {
     "@types/bonjour": "https://gitpkg.now.sh/benkrejci/DefinitelyTyped/types/bonjour?bonjour",
     "@types/debounce": "^1.2.0",
