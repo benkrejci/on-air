@@ -17,12 +17,9 @@
     "@types/connect" "*"
     "@types/node" "*"
 
-"@types/bonjour@^3.5.6":
-  version "3.5.6"
-  resolved "https://registry.yarnpkg.com/@types/bonjour/-/bonjour-3.5.6.tgz#200c79b3ab8acf21676297a1d71432a74ce02112"
-  integrity sha512-BQvTuANZ2UyBnrAxxdI0ZeJEqelV7oJHLmczwPng0OawCpuMPfPVWTglFWSyRCfaeeSJFdnlPREmoK6BU9xzgA==
-  dependencies:
-    "@types/node" "*"
+"@types/bonjour@https://gitpkg.now.sh/benkrejci/DefinitelyTyped/types/bonjour?bonjour":
+  version "0.0.0"
+  resolved "https://gitpkg.now.sh/benkrejci/DefinitelyTyped/types/bonjour?bonjour#c7d6d77653c7fcaec298fd7f8a9548efdb25b732"
 
 "@types/connect@*":
   version "3.4.33"
