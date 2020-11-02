@@ -1,6 +1,6 @@
 {
   "name": "@benkrejci/on-air",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": "git@github.com:benkrejci/on-air.git",
@@ -8,7 +8,8 @@
   "license": "MIT",
   "bin": {
     "on-air-box": "./dist/index.js",
-    "on-air-install": "./bin/install"
+    "on-air-install": "./bin/install",
+    "on-air-uninstall": "./bin/uninstall"
   },
   "scripts": {
     "dev": "nodemon --watch 'lib/**/*.ts' --exec 'ts-node' lib/index.ts",
