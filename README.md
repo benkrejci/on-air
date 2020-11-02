@@ -25,29 +25,25 @@ sudo apt install -y nvm
 nvm install 12 --lts
 ```
 
-On a 1st gen Pi or Pi Zero W (which is what I ultimately used mine), this worked for me:
+On a 1st gen Pi or Pi Zero W (which is what I ultimately used mine), you can install from the nodesource ppa like this:
 
 ```sh
-wget https://unofficial-builds.nodejs.org/download/release/v12.18.3/node-v12.18.3-linux-armv6l.tar.gz
-tar -xzf node-v12.18.3-linux-armv6l.tar.gz
-sudo cp -R node-v12.18.3-linux-armv6l/* /usr/local
+curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
+sudo apt install -y nodejs
 ```
 
-### Install other dependencies
+### Install on-air globally
 
 ```sh
-sudo apt install git
-npm i -g yarn # you may have to use sudo if you didn't install node via nvm
-yarn global add typescript
+npm i @benkrejci/on-air # shouldn't need to install globally, so just make sure you're in a directory you like
+sudo npx on-air-install # this installs pigpio and registers the on-air-box start script as a systemd service
 ```
 
-### Clone on-air and install dependencies
+You can then optionally alter the default config: `/etc/on-air-box.yml`
+And start the service: `sudo systemctl start on-air-box`
+To see logs: `sudo journalctl -u on-air-box`
 
-```sh
-git clone https://github.com/benkrejci/on-air.git
-cd on-air
-./bin/install
-```
+If you have issues, to make debugging easier, stop the service and run the script directly using: `npx on-air-box`
 
 ### Note
 
