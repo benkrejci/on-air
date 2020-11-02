@@ -32,7 +32,7 @@ curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
 sudo apt install -y nodejs
 ```
 
-### Install on-air globally
+### Install this package
 
 ```sh
 npm i @benkrejci/on-air # shouldn't need to install globally, so just make sure you're in a directory you like
