@@ -1,14 +1,16 @@
 {
   "name": "@benkrejci/on-air",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": "git@github.com:benkrejci/on-air.git",
   "author": "benkrejci",
   "license": "MIT",
-  "bin": "./dist/index.js",
+  "bin": {
+    "on-air-box": "./dist/index.js",
+    "on-air-install": "./bin/install"
+  },
   "scripts": {
-    "preinstall": "bin/install",
     "dev": "nodemon --watch 'lib/**/*.ts' --exec 'ts-node' lib/index.ts",
     "build": "yarn run build-config-validator && yarn run tsc",
     "build-config-validator": "yarn run typescript-json-validator --useNamedExport lib/config.ts RawConfig",
