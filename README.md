@@ -39,11 +39,10 @@ npm i @benkrejci/on-air # shouldn't need to install globally, so just make sure 
 sudo npx on-air-install # this installs pigpio and registers the on-air-box start script as a systemd service
 ```
 
-You can then optionally alter the default config: `/etc/on-air-box.yml`
-And start the service: `sudo systemctl start on-air-box`
-To see logs: `sudo journalctl -u on-air-box`
-
-If you have issues, to make debugging easier, stop the service and run the script directly using: `npx on-air-box`
+- You can then optionally alter the default config: `/etc/on-air-box.yml`
+- And start the service: `sudo systemctl start on-air-box`
+- To see logs: `sudo journalctl -u on-air-box`
+- If you have issues, to make debugging easier, stop the service and run the script directly using: `npx on-air-box`
 
 ### Note
 
