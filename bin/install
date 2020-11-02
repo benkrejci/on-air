@@ -1,19 +1,33 @@
 #!/usr/bin/env bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-REPO="$(dirname "$DIR")"
+REPO="$(dirname "$DIR")/@benkrejci/on-air"
 
 echo "Installing apt dependencies..."
-sudo apt-get install -y pigpio
+echo
+apt-get install -y pigpio
 
-BOX_CONFIG="$REPO/config/config.yml"
-if [ -f "$BOX_CONFIG" ]; then
-  echo "Skipping copy default config.yml because $BOX_CONFIG already exists."
+DEFAULT_CONFIG="$REPO/config/config.example.yml"
+CONFIG="/etc/on-air-box.yml"
+echo
+if [ -f "$CONFIG" ]; then
+  echo "Skipping copy default config.yml because $CONFIG already exists."
 else
   echo "Copying default box-config.yml..."
-  cp "$REPO/config/config.example.yml" "$BOX_CONFIG"
+  cp "$DEFAULT_CONFIG" "$CONFIG"
 fi
+echo
 
-echo "Installing and starting systemd service..."
-START_COMMAND="$(which npx) on-air"
-sudo "$DIR/.installService" "$REPO/config/on-air-box.service" "$START_COMMAND"
+echo "Installing systemd service..."
+START_COMMAND="$(which node) $DIR/on-air-box"
+cat "$REPO/config/on-air-box.service" | sed -e "s@{{{START_COMMAND}}}@$START_COMMAND@g" > /etc/systemd/system/on-air-box.service
+chmod 0644 "/etc/systemd/system/on-air-box.service"
+systemctl daemon-reload
+systemctl enable on-air-box
+
+echo
+echo "Done. Now:"
+echo "- Modify $CONFIG to your liking"
+echo "- Use \`sudo systemctl start on-air-box\` to start the service"
+echo "- Use \`sudo journalctl -u on-air-box\` to see logs"
+

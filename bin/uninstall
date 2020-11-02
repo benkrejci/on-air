@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+systemctl stop on-air-box
+systemctl disable on-air-box
+rm /etc/systemd/system/on-air-box.service
+systemctl daemon-reload
+rm /etc/on-air-box.yml

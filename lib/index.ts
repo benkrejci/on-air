@@ -15,7 +15,7 @@ try {
         validateRawConfig(
             YAML.parse(
                 fs.readFileSync(
-                    path.join(__dirname, '../config/config.yml'),
+                    '/etc/on-air-box.yml',
                     'utf8'
                 )
             )
