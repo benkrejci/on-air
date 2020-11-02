@@ -6,10 +6,6 @@ REPO="$(dirname "$DIR")"
 echo "Installing apt dependencies..."
 sudo apt-get install -y pigpio
 
-echo "Installing package dependencies..."
-yarn install
-echo "Building..."
-yarn build
 BOX_CONFIG="$REPO/config/config.yml"
 if [ -f "$BOX_CONFIG" ]; then
   echo "Skipping copy default config.yml because $BOX_CONFIG already exists."
@@ -19,5 +15,5 @@ else
 fi
 
 echo "Installing and starting systemd service..."
-START_COMMAND="$(which node) $REPO/dist/index.js"
+START_COMMAND="$(which npx) on-air"
 sudo "$DIR/.installService" "$REPO/config/on-air-box.service" "$START_COMMAND"
