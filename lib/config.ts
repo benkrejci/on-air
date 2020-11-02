@@ -32,7 +32,7 @@ export interface TransformFunctionRawConfig {
 export interface RawConfig {
     statuses: string[]
     defaultStatus: string
-    showLocalStatusOnGlobalOutput: boolean
+    showLocalStatusOnGlobalOutput?: boolean
 
     service?: {
         port?: number
