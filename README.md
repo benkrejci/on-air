@@ -25,11 +25,12 @@ sudo apt install -y nvm
 nvm install 12 --lts
 ```
 
-On a 1st gen Pi or Pi Zero W (which is what I ultimately used mine), you can install from the nodesource ppa like this:
+On a 1st gen Pi or Pi Zero W (which is what I ultimately used mine), you can install from unofficial builds like this:
 
 ```sh
-curl -sL https://deb.nodesource.com/setup_10.x | sudo bash -
-sudo apt install -y nodejs
+wget https://unofficial-builds.nodejs.org/download/release/v12.20.0/node-v12.20.0-linux-armv6l.tar.xz
+tar -xvf node-v12.20.0-linux-armv6l.tar.xz
+sudo cp -R node-v12.20.0-linux-armv6l/* /usr/local/
 ```
 
 ### Install this package
