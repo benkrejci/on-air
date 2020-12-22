@@ -5,7 +5,7 @@ This solves the problem of one of us (mostly me) barging in on the other while t
 
 ![Box front animated](./docs/box-front.gif)
 
-This project ended up being a pretty good learning experience for me around circuits and specifically driving high-power LEDs. It's a good overlap of a simple idea with myriad considerations and edge cases.
+This project ended up being a pretty good learning experience for me around circuits and specifically driving high-power LEDs.
 
 ![Box interior](./docs/box-interior.jpg)
 
