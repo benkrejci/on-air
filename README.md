@@ -28,9 +28,9 @@ nvm install 12 --lts
 On a 1st gen Pi or Pi Zero W (which is what I ultimately used mine), you can install from unofficial builds like this:
 
 ```sh
-wget https://unofficial-builds.nodejs.org/download/release/v12.20.0/node-v12.20.0-linux-armv6l.tar.xz
-tar -xvf node-v12.20.0-linux-armv6l.tar.xz
-sudo cp -R node-v12.20.0-linux-armv6l/* /usr/local/
+wget https://nodejs.org/dist/latest-v10.x/node-v10.23.0-linux-armv6l.tar.xz
+tar -xvf node-v10.23.0-linux-armv6l.tar.xz
+sudo cp -R node-v10.23.0-linux-armv6l/* /usr/local/
 ```
 
 ### Install this package
