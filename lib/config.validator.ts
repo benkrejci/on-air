@@ -275,7 +275,6 @@ export const RawConfigSchema = {
   "required": [
     "box",
     "defaultStatus",
-    "showLocalStatusOnGlobalOutput",
     "statuses"
   ],
   "type": "object"
